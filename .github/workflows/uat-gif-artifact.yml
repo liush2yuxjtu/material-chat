@@ -29,8 +29,8 @@ jobs:
       NEXTAUTH_URL: http://127.0.0.1:3000
       GOOGLE_CLIENT_ID: ci-placeholder-client
       GOOGLE_CLIENT_SECRET: ci-placeholder-secret
-      UAT_EMAIL: test@example.com
-      UAT_PASSWORD: test123
+      UAT_EMAIL: uat-recording-${{ github.run_id }}@example.com
+      UAT_PASSWORD: uat-test-123456
 
     services:
       postgres:
@@ -65,12 +65,11 @@ jobs:
           npm ci
           npx playwright install --with-deps chromium
 
-      - name: Prepare and seed UAT database
+      - name: Prepare empty UAT database
         run: |
           set -euo pipefail
           npx prisma generate
           npx prisma migrate deploy
-          npm run db:seed
 
       - name: Start Material Chat
         run: |
@@ -78,7 +77,7 @@ jobs:
           npm run dev -- --hostname 127.0.0.1 --port 3000 > /tmp/material-chat-uat-server.log 2>&1 &
           echo $! > /tmp/material-chat-uat-server.pid
           for attempt in $(seq 1 90); do
-            if curl -fsS http://127.0.0.1:3000/login >/dev/null; then
+            if curl -fsS http://127.0.0.1:3000/register >/dev/null; then
               exit 0
             fi
             sleep 2
@@ -131,10 +130,10 @@ jobs:
       - name: Add artifact links to job summary
         run: |
           {
-            echo '## Material Chat UAT 业务录屏'
+            echo '## Material Chat 真实 UAT 业务录屏'
             echo
-            echo '- UAT-02 / UAT-04：登录与 AI 流式对话'
-            echo '- UAT-06 / UAT-07：素材上传与标签筛选'
+            echo '- UAT-01 / UAT-04：注册与 AI 流式对话'
+            echo '- UAT-02 / UAT-06 / UAT-07：重新登录、素材上传与标签筛选'
             echo '- [下载 GIF、WebM 和截图 artifact](${{ steps.upload.outputs.artifact-url }})'
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -148,10 +147,10 @@ jobs:
 
             本次 Actions 已录制以下可观察业务流程：
 
-            1. **UAT-02 / UAT-04**：测试用户登录 → 进入聊天页 → 输入问题 → 接收 Mock LLM SSE 流式回答。
-            2. **UAT-06 / UAT-07**：上传课程资料 → 设置文档类型与标签 → 上传成功 → 按类型和标签筛选。
+            1. **UAT-01 / UAT-04**：新用户注册 → 自动登录 → 输入问题 → 接收 Mock LLM SSE 流式回答。
+            2. **UAT-02 / UAT-06 / UAT-07**：使用新账号重新登录 → 上传课程资料 → 设置文档类型与标签 → 按类型和标签筛选。
 
-            录屏中包含步骤标题、操作高亮和通过标记。
+            录屏包含步骤标题、控件高亮和通过标记。
 
             - [下载 GIF、原始 WebM 和最终截图](${{ steps.upload.outputs.artifact-url }})
             - [打开本次 Actions 运行](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})
