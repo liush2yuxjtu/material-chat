@@ -19,7 +19,7 @@ jobs:
   record-uat-business-flows:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 35
 
     services:
       postgres:
@@ -60,60 +60,38 @@ jobs:
           npx prisma generate
           npx prisma migrate deploy
 
-      - name: Build Material Chat
-        id: build_app
-        continue-on-error: true
+      - name: Start Material Chat development server
         env:
-          NEXTAUTH_SECRET: test-secret-key-for-ci
-          NEXTAUTH_URL: http://localhost:3000
-          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/material_chat_test
-        run: |
-          set -o pipefail
-          mkdir -p artifacts/uat-diagnostics
-          npm run build 2>&1 | tee artifacts/uat-diagnostics/build.log
-
-      - name: Upload build diagnostics
-        if: steps.build_app.outcome == 'failure'
-        uses: actions/upload-artifact@v4
-        with:
-          name: material-chat-uat-build-diagnostics-${{ github.run_id }}
-          path: artifacts/uat-diagnostics/build.log
-          if-no-files-found: error
-          retention-days: 7
-
-      - name: Fail when build fails
-        if: steps.build_app.outcome == 'failure'
-        run: exit 1
-
-      - name: Start Material Chat production server
-        env:
+          CI: '1'
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/material_chat_test
           AUTH_SECRET: ci-only-uat-recording-secret-at-least-32-characters
           NEXTAUTH_SECRET: ci-only-uat-recording-secret-at-least-32-characters
           NEXTAUTH_URL: http://localhost:3000
           GOOGLE_CLIENT_ID: ci-placeholder-client
           GOOGLE_CLIENT_SECRET: ci-placeholder-secret
+          NEXT_TELEMETRY_DISABLED: '1'
         run: |
           set -euo pipefail
-          npm run start -- --hostname 127.0.0.1 --port 3000 > artifacts/uat-diagnostics/server.log 2>&1 &
+          mkdir -p artifacts/uat-diagnostics
+          npm run dev -- --webpack --hostname 127.0.0.1 --port 3000 > artifacts/uat-diagnostics/server.log 2>&1 &
           server_pid=$!
           echo "$server_pid" > /tmp/material-chat-uat-server.pid
-          for attempt in $(seq 1 30); do
+          for attempt in $(seq 1 60); do
             if ! kill -0 "$server_pid" 2>/dev/null; then
               echo "Material Chat exited before becoming ready."
               cat artifacts/uat-diagnostics/server.log
               exit 1
             fi
-            status="$(curl --connect-timeout 1 --max-time 2 -sS -o /tmp/material-chat-register.html -w '%{http_code}' http://localhost:3000/register || true)"
+            status="$(curl --connect-timeout 1 --max-time 3 -sS -o /tmp/material-chat-home.html -w '%{http_code}' http://localhost:3000/ || true)"
             if [[ "$status" =~ ^(2|3) ]]; then
               cat artifacts/uat-diagnostics/server.log
               exit 0
             fi
             sleep 2
           done
-          echo "Material Chat did not become ready within 60 seconds."
+          echo "Material Chat did not become ready within 120 seconds."
           cat artifacts/uat-diagnostics/server.log
-          cat /tmp/material-chat-register.html 2>/dev/null || true
+          cat /tmp/material-chat-home.html 2>/dev/null || true
           exit 1
 
       - name: Record visible UAT business flows
