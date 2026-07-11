@@ -21,10 +21,12 @@ jobs:
     timeout-minutes: 30
     env:
       CI: true
+      PLAYWRIGHT_USE_DEV_SERVER: '1'
+      BASE_URL: http://127.0.0.1:3000
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/material_chat_test
       AUTH_SECRET: ci-only-visual-evidence-secret-at-least-32-characters
       NEXTAUTH_SECRET: ci-only-visual-evidence-secret-at-least-32-characters
-      NEXTAUTH_URL: http://localhost:3000
+      NEXTAUTH_URL: http://127.0.0.1:3000
 
     services:
       postgres:
