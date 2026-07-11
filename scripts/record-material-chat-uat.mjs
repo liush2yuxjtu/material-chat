@@ -6,8 +6,9 @@ const BASE_URL = process.env.BASE_URL || 'http://127.0.0.1:3000';
 const OUTPUT_DIR = resolve('uat-media');
 const VIDEO_DIR = resolve(OUTPUT_DIR, 'videos');
 const SCREENSHOT_DIR = resolve(OUTPUT_DIR, 'screenshots');
-const TEST_EMAIL = process.env.UAT_EMAIL || 'test@example.com';
-const TEST_PASSWORD = process.env.UAT_PASSWORD || 'test123';
+const TEST_EMAIL = process.env.UAT_EMAIL || `uat-recording-${Date.now()}@example.com`;
+const TEST_PASSWORD = process.env.UAT_PASSWORD || 'uat-test-123456';
+const TEST_NAME = 'UAT 演示用户';
 
 await mkdir(VIDEO_DIR, { recursive: true });
 await mkdir(SCREENSHOT_DIR, { recursive: true });
@@ -25,17 +26,10 @@ async function showStep(page, title, detail, state = 'active') {
       const overlay = document.createElement('div');
       overlay.id = 'uat-step-overlay';
       overlay.style.cssText = [
-        'position:fixed',
-        'top:18px',
-        'left:18px',
-        'z-index:2147483647',
-        'max-width:520px',
-        'padding:14px 18px',
-        'border-radius:12px',
+        'position:fixed', 'top:18px', 'left:18px', 'z-index:2147483647',
+        'max-width:540px', 'padding:14px 18px', 'border-radius:12px',
         'font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif',
-        'font-size:16px',
-        'line-height:1.45',
-        'box-shadow:0 12px 35px rgba(0,0,0,.28)',
+        'font-size:16px', 'line-height:1.45', 'box-shadow:0 12px 35px rgba(0,0,0,.28)',
         'color:white',
         `background:${state === 'passed' ? 'rgba(5,122,85,.96)' : 'rgba(17,24,39,.96)'}`,
         `border:2px solid ${state === 'passed' ? '#6ee7b7' : '#60a5fa'}`,
@@ -57,7 +51,7 @@ async function highlight(locator) {
     element.style.outlineOffset = '4px';
   });
   await locator.hover().catch(() => undefined);
-  await locator.page().waitForTimeout(700);
+  await new Promise((resolveDelay) => setTimeout(resolveDelay, 700));
 }
 
 async function clearHighlight(locator) {
@@ -74,10 +68,25 @@ async function typeVisible(locator, value) {
   await clearHighlight(locator);
 }
 
+async function register(page) {
+  await page.goto(`${BASE_URL}/register`, { waitUntil: 'domcontentloaded', timeout: 120_000 });
+  await page.getByRole('heading', { name: '注册' }).waitFor();
+  await showStep(page, 'UAT-01｜新用户注册', '填写姓名、邮箱和密码，提交后自动登录');
+  await typeVisible(page.getByLabel('姓名'), TEST_NAME);
+  await typeVisible(page.getByLabel('邮箱'), TEST_EMAIL);
+  await typeVisible(page.getByLabel(/密码/), TEST_PASSWORD);
+  const registerButton = page.getByRole('button', { name: '注册' });
+  await highlight(registerButton);
+  await registerButton.click();
+  await page.waitForURL(/\/chat$/, { timeout: 30_000 });
+  await page.getByRole('heading', { name: '素材管理与AI问答' }).waitFor();
+  await showStep(page, 'UAT-01｜通过', `账号 ${TEST_EMAIL} 已创建并自动进入聊天工作台`, 'passed');
+}
+
 async function login(page) {
   await page.goto(`${BASE_URL}/login`, { waitUntil: 'domcontentloaded', timeout: 120_000 });
   await page.getByRole('heading', { name: '登录' }).waitFor();
-  await showStep(page, 'UAT-02｜用户登录', '输入测试账号并进入受保护的聊天工作台');
+  await showStep(page, 'UAT-02｜用户登录', '使用刚才注册的账号重新进入受保护工作台');
   await typeVisible(page.getByLabel('邮箱'), TEST_EMAIL);
   await typeVisible(page.getByLabel('密码'), TEST_PASSWORD);
   const loginButton = page.getByRole('button', { name: '登录' });
@@ -85,7 +94,7 @@ async function login(page) {
   await loginButton.click();
   await page.waitForURL(/\/chat$/, { timeout: 30_000 });
   await page.getByRole('heading', { name: '素材管理与AI问答' }).waitFor();
-  await showStep(page, 'UAT-02｜通过', `已登录为 ${TEST_EMAIL}，成功进入聊天页面`, 'passed');
+  await showStep(page, 'UAT-02｜通过', `已登录为 ${TEST_EMAIL}`, 'passed');
 }
 
 async function finishRecording(context, page, fileName) {
@@ -98,13 +107,13 @@ async function finishRecording(context, page, fileName) {
   return targetPath;
 }
 
-async function recordLoginAndChat() {
+async function recordRegistrationAndChat() {
   const context = await browser.newContext({
     viewport: { width: 1280, height: 720 },
     recordVideo: { dir: VIDEO_DIR, size: { width: 1280, height: 720 } },
   });
   const page = await context.newPage();
-  await login(page);
+  await register(page);
 
   const message = '请用三点说明如何整理课程学习资料。';
   await showStep(page, 'UAT-04｜AI 流式对话', '发送真实问题，并观察 Mock LLM 的 SSE 流式回答');
@@ -121,8 +130,8 @@ async function recordLoginAndChat() {
   );
   await page.getByRole('button', { name: '发送' }).waitFor({ timeout: 30_000 });
   await showStep(page, 'UAT-04｜通过', '用户消息已显示，AI 回答通过 SSE 完整返回', 'passed');
-  await page.screenshot({ path: resolve(SCREENSHOT_DIR, 'UAT-02-04-login-chat.png'), fullPage: true });
-  return finishRecording(context, page, 'UAT-02-04-login-chat.webm');
+  await page.screenshot({ path: resolve(SCREENSHOT_DIR, 'UAT-01-04-register-chat.png'), fullPage: true });
+  return finishRecording(context, page, 'UAT-01-04-register-chat.webm');
 }
 
 async function recordMaterialUploadAndFilter() {
@@ -171,22 +180,23 @@ async function recordMaterialUploadAndFilter() {
   await page.waitForTimeout(1800);
   await page.getByText('uat-course-brief.txt', { exact: true }).waitFor();
   await showStep(page, 'UAT-07｜通过', '筛选结果只保留匹配的 UAT 文档', 'passed');
-  await page.screenshot({ path: resolve(SCREENSHOT_DIR, 'UAT-06-07-upload-filter.png'), fullPage: true });
-  return finishRecording(context, page, 'UAT-06-07-upload-filter.webm');
+  await page.screenshot({ path: resolve(SCREENSHOT_DIR, 'UAT-02-06-07-login-upload-filter.png'), fullPage: true });
+  return finishRecording(context, page, 'UAT-02-06-07-login-upload-filter.webm');
 }
 
 const results = [];
 try {
-  results.push(await recordLoginAndChat());
+  results.push(await recordRegistrationAndChat());
   results.push(await recordMaterialUploadAndFilter());
   await writeFile(
     resolve(OUTPUT_DIR, 'summary.json'),
     JSON.stringify({
       recordedAt: new Date().toISOString(),
       baseUrl: BASE_URL,
+      user: TEST_EMAIL,
       scenarios: [
-        { id: 'UAT-02/UAT-04', title: '登录与 AI 流式对话', video: results[0] },
-        { id: 'UAT-06/UAT-07', title: '素材上传与筛选', video: results[1] },
+        { id: 'UAT-01/UAT-04', title: '注册与 AI 流式对话', video: results[0] },
+        { id: 'UAT-02/UAT-06/UAT-07', title: '登录、素材上传与筛选', video: results[1] },
       ],
     }, null, 2),
     'utf8',
