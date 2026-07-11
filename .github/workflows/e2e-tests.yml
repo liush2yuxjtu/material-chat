@@ -1,26 +1,19 @@
-name: UAT — E2E 测试（Playwright 快照 + 视频）
+name: UAT — E2E 测试（PR 内联快照 + 视频 + 报告）
 
 on:
-  # 手动触发：支持指定测试范围和目标 URL
   workflow_dispatch:
     inputs:
-      base_url:
-        description: '测试目标 URL（留空则本地构建并测试）'
-        required: false
-        default: ''
       test_grep:
-        description: '只跑匹配的测试（如 "UAT-01" 跑注册测试，"UAT-0[1-4]" 跑前4个）'
+        description: '只跑匹配的测试（如 "UAT-01" 跑注册）'
         required: false
         default: ''
 
-  # 每个 PR 自动运行
   pull_request:
     branches: [main, master]
     paths-ignore:
       - '**.md'
       - 'docs/**'
 
-  # 合并到 main 后回归检查
   push:
     branches: [main, master]
     paths-ignore:
@@ -31,9 +24,16 @@ concurrency:
   group: uat-${{ github.ref }}
   cancel-in-progress: true
 
+# 需要 contents:write 才能部署 GitHub Pages 和 PR comment
+permissions:
+  contents: write
+  pull-requests: write
+  actions: read
+  deployments: write
+
 jobs:
   uat:
-    name: Playwright UAT（快照 + 视频）
+    name: Playwright UAT
     runs-on: ubuntu-latest
     timeout-minutes: 25
 
@@ -89,7 +89,7 @@ jobs:
         run: |
           GREP="${{ github.event.inputs.test_grep }}"
           if [ -n "$GREP" ]; then
-            echo "只运行匹配: $GREP"
+            echo "→ 只运行: $GREP"
             npx playwright test --grep "$GREP"
           else
             npx playwright test
@@ -100,9 +100,55 @@ jobs:
           NEXTAUTH_URL: http://localhost:3000
         continue-on-error: true
 
-      # ── 分门别类上传 artifacts ──
+      # ── 复制截图到报告目录（供 GitHub Pages 引用） ──
 
-      - name: 上传 HTML 报告
+      - name: 整理截图到报告目录
+        if: always()
+        run: |
+          mkdir -p playwright-report/screenshots
+          find test-results -name "*.png" -exec cp {} playwright-report/screenshots/ \; 2>/dev/null || true
+          find test-results -name "*.webm" -exec cp {} playwright-report/videos/ \; 2>/dev/null || true
+          echo "Screenshots: $(ls playwright-report/screenshots/ 2>/dev/null | wc -l)"
+          echo "Videos: $(ls playwright-report/videos/ 2>/dev/null | wc -l)"
+
+      # ── 生成 PR 评论 Markdown（解析 test-results.json） ──
+
+      - name: 生成测试摘要
+        id: summary
+        if: always()
+        run: python3 scripts/generate-uat-summary.py
+        env:
+          PAGES_BASE: "https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}"
+          GITHUB_RUN_ID: "${{ github.run_id }}"
+          GITHUB_REPOSITORY: "${{ github.repository }}"
+          GITHUB_SERVER_URL: "${{ github.server_url }}"
+
+      # ── 部署 HTML 报告到 GitHub Pages ──
+
+      - name: 部署报告到 GitHub Pages
+        if: always()
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./playwright-report
+          destination_dir: uat-report
+          keep_files: false
+          user_name: 'github-actions[bot]'
+          user_email: 'github-actions[bot]@users.noreply.github.com'
+          commit_message: '📊 UAT report for ${{ github.run_id }}'
+
+      # ── PR 内联评论（sticky，每次更新不刷屏） ──
+
+      - name: PR 内联评论
+        if: github.event_name == 'pull_request'
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: uat-results
+          path: uat-comment.md
+
+      # ── 上传 artifacts（兜底下载） ──
+
+      - name: 上传 HTML 报告 (artifact)
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -110,22 +156,12 @@ jobs:
           path: playwright-report/
           retention-days: 30
 
-      - name: 上传测试结果 JSON
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: test-results-json
-          path: test-results/test-results.json
-          retention-days: 30
-
-      - name: 上传截图（全量）
+      - name: 上传截图
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: screenshots
-          path: |
-            test-results/artifacts/
-            test-results/**/*.png
+          path: test-results/**/*.png
           retention-days: 30
 
       - name: 上传视频
@@ -133,36 +169,13 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: videos
-          path: test-results/videos/
+          path: test-results/**/*.webm
           retention-days: 14
 
-      - name: 上传 Trace（回放调试用）
+      - name: 上传 Trace
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: playwright-traces
           path: test-results/**/trace.zip
           retention-days: 14
-
-      # ── 测试摘要 ──
-
-      - name: 生成测试摘要
-        if: always()
-        run: |
-          {
-            echo "## UAT 测试结果"
-            echo ""
-            echo "| 项目 | 链接 |"
-            echo "|------|------|"
-            echo "| HTML 报告 | [查看](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) |"
-            echo "| 触发方式 | ${{ github.event_name == 'workflow_dispatch' && '手动触发' || github.event_name == 'pull_request' && 'PR 自动' || 'Push 自动' }} |"
-            if [ "${{ github.event.inputs.test_grep }}" != "" ]; then
-              echo "| 测试过滤 | ${{ github.event.inputs.test_grep }} |"
-            fi
-            echo ""
-            echo "### 本地复现"
-            echo '```bash'
-            echo 'npx playwright test'
-            echo 'npx playwright show-report'
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
