@@ -173,8 +173,22 @@ jobs:
         run: |
           set -uo pipefail
           rm -rf uat-media /tmp/material-chat-uat-media
+
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('scripts/record-material-chat-uat.mjs')
+          text = path.read_text(encoding='utf-8')
+          needle = "  const response = await credentialsResponse;\n  if (!response.ok()) {"
+          replacement = "  const response = await credentialsResponse;\n  await page.waitForTimeout(3000);\n  if (!response.ok()) {"
+          if needle not in text:
+              raise SystemExit('Second-login stabilization marker not found')
+          path.write_text(text.replace(needle, replacement, 1), encoding='utf-8')
+          PY
+
+          set +e
           node scripts/record-material-chat-uat.mjs
           status=$?
+          set -e
           if [ -d /tmp/material-chat-uat-media ]; then
             cp -R /tmp/material-chat-uat-media uat-media
           fi
