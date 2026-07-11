@@ -13,9 +13,13 @@ export class RecallMemoryUseCase {
    * @param key 偏好键名
    * @param defaultValue 默认值（如果不存在）
    */
-  async getUserPreference<T>(userId: string, key: string, defaultValue: T): Promise<T> {
+  async getUserPreference<T>(
+    userId: string,
+    key: string,
+    defaultValue: T,
+  ): Promise<T> {
     const value = await this.memoryPort.getPreference(userId, key);
-    return value !== null ? value : defaultValue;
+    return value === null || value === undefined ? defaultValue : (value as T);
   }
 
   /**
@@ -24,11 +28,13 @@ export class RecallMemoryUseCase {
    * @param userIntent 用户输入的自然语言意图
    * @returns 匹配的模板或 null
    */
-  async findBestQueryTemplate(userId: string, userIntent: string): Promise<QueryTemplateData | null> {
+  async findBestQueryTemplate(
+    userId: string,
+    userIntent: string,
+  ): Promise<QueryTemplateData | null> {
     const template = await this.memoryPort.findMatchingTemplate(userId, userIntent);
 
     if (template) {
-      // 记录命中，用于统计
       await this.memoryPort.incrementTemplateUse(template.id);
     }
 
@@ -41,8 +47,11 @@ export class RecallMemoryUseCase {
    * @param externalDbId 外部数据库ID
    * @returns 缓存的 Schema 或 null（需要重新获取）
    */
-  async getCachedSchema(userId: string, externalDbId: string): Promise<unknown | null> {
-    return await this.memoryPort.getCachedSchema(userId, externalDbId);
+  async getCachedSchema(
+    userId: string,
+    externalDbId: string,
+  ): Promise<unknown | null> {
+    return this.memoryPort.getCachedSchema(userId, externalDbId);
   }
 
   /**
@@ -51,7 +60,11 @@ export class RecallMemoryUseCase {
    * @param externalDbId 外部数据库ID
    * @param newSchema 新的 Schema 数据
    */
-  async refreshSchemaCache(userId: string, externalDbId: string, newSchema: unknown): Promise<void> {
+  async refreshSchemaCache(
+    userId: string,
+    externalDbId: string,
+    newSchema: unknown,
+  ): Promise<void> {
     await this.memoryPort.cacheSchema(userId, externalDbId, newSchema);
   }
 }
