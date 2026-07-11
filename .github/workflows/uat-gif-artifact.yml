@@ -19,7 +19,7 @@ jobs:
   record-uat-business-flows:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 40
     env:
       CI: true
       BASE_URL: http://127.0.0.1:3000
@@ -71,10 +71,13 @@ jobs:
           npx prisma generate
           npx prisma migrate deploy
 
-      - name: Start Material Chat
+      - name: Build Material Chat
+        run: npm run build
+
+      - name: Start Material Chat production server
         run: |
           set -euo pipefail
-          npm run dev -- --hostname 127.0.0.1 --port 3000 > /tmp/material-chat-uat-server.log 2>&1 &
+          npm run start -- --hostname 127.0.0.1 --port 3000 > /tmp/material-chat-uat-server.log 2>&1 &
           server_pid=$!
           echo "$server_pid" > /tmp/material-chat-uat-server.pid
           for attempt in $(seq 1 30); do
@@ -83,7 +86,8 @@ jobs:
               cat /tmp/material-chat-uat-server.log
               exit 1
             fi
-            if curl --connect-timeout 1 --max-time 2 -fsS http://127.0.0.1:3000/register >/dev/null; then
+            status="$(curl --connect-timeout 1 --max-time 2 -sS -o /tmp/material-chat-register.html -w '%{http_code}' http://127.0.0.1:3000/register || true)"
+            if [[ "$status" =~ ^(2|3) ]]; then
               cat /tmp/material-chat-uat-server.log
               exit 0
             fi
@@ -91,6 +95,7 @@ jobs:
           done
           echo "Material Chat did not become ready within 60 seconds."
           cat /tmp/material-chat-uat-server.log
+          cat /tmp/material-chat-register.html 2>/dev/null || true
           exit 1
 
       - name: Record visible UAT business flows
