@@ -3,11 +3,13 @@ import { defineConfig, devices } from '@playwright/test'
 /**
  * Playwright E2E 测试配置 — UAT 专用
  *
- * 两种运行模式：
- * 1. CI 模式（GitHub Actions）：全量截图 + 视频 + trace，串行执行
- * 2. 本地模式：仅失败时截图，并行执行，复用 dev server
+ * 运行模式：
+ * 1. CI production 模式：全量截图 + 视频 + trace，串行执行 production build
+ * 2. CI evidence 模式：保留 CI 媒体策略，但使用独立 dev server，避免构建门禁阻断视觉采集
+ * 3. 本地模式：仅失败时截图，并行执行，复用 dev server
  */
 const CI = !!process.env.CI
+const useDevServer = process.env.PLAYWRIGHT_USE_DEV_SERVER === '1'
 
 export default defineConfig({
   testDir: './tests/e2e',
@@ -46,18 +48,24 @@ export default defineConfig({
     },
   ],
 
-  /* CI 模式下自己启动 production build；本地模式复用 dev server */
-  webServer: CI
+  webServer: useDevServer
     ? {
-        command: 'npm run build && npm run start',
-        url: 'http://localhost:3000',
+        command: 'npm run dev -- --hostname 127.0.0.1 --port 3000',
+        url: 'http://127.0.0.1:3000',
         reuseExistingServer: false,
         timeout: 180_000,
       }
-    : {
-        command: 'npm run dev',
-        url: 'http://localhost:3000',
-        reuseExistingServer: true,
-        timeout: 120_000,
-      },
+    : CI
+      ? {
+          command: 'npm run build && npm run start',
+          url: 'http://localhost:3000',
+          reuseExistingServer: false,
+          timeout: 180_000,
+        }
+      : {
+          command: 'npm run dev',
+          url: 'http://localhost:3000',
+          reuseExistingServer: true,
+          timeout: 120_000,
+        },
 })
