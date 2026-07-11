@@ -19,6 +19,27 @@ jobs:
     if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      CI: true
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/material_chat_test
+      AUTH_SECRET: ci-only-visual-evidence-secret-at-least-32-characters
+      NEXTAUTH_SECRET: ci-only-visual-evidence-secret-at-least-32-characters
+      NEXTAUTH_URL: http://localhost:3000
+
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: material_chat_test
+        options: >-
+          --health-cmd "pg_isready -U postgres -d material_chat_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
 
     steps:
       - name: Checkout PR head
@@ -38,6 +59,12 @@ jobs:
 
       - name: Install Playwright Chromium
         run: npx playwright install --with-deps chromium
+
+      - name: Prepare PostgreSQL schema
+        run: |
+          set -euo pipefail
+          npx prisma generate
+          npx prisma migrate deploy
 
       - name: Preserve trusted PR body renderer
         id: renderer
