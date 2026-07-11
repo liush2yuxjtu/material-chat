@@ -1,0 +1,172 @@
+// schema.prisma
+// 素材管理与 AI 问答平台数据库 Schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ===== 用户与认证 =====
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String?
+  password  String?  // bcrypt hash, null when OAuth-only
+  image     String?
+  createdAt DateTime @default(now())
+
+  // NextAuth 关系
+  accounts      Account[]
+  sessions      Session[]
+
+  // 业务关系
+  conversations Conversation[]
+  materials     Material[]
+  preferences   UserPreference[]
+  externalDBs   ExternalDatabase[]
+  schemaCaches  SchemaCache[]
+  queryTemplates QueryTemplate[]
+}
+
+// NextAuth Account 模型
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+// NextAuth Session 模型
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// ===== 对话与消息 =====
+
+model Conversation {
+  id        String   @id @default(cuid())
+  title     String?  // AI 自动生成或用户编辑
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  messages  Message[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Message {
+  id             String   @id @default(cuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id])
+  role           String   // "user" | "assistant" | "system"
+  content        String   // 消息正文（markdown）
+  sql            String?  // AI 生成的 SQL（如有）
+  sqlResult      Json?    // 查询结果（JSON）
+  bashCommand    String?  // 用户执行的 bash（如有）
+  bashOutput     String?  // bash stdout+stderr
+  materialIds    String[] // 关联的素材引用
+  createdAt      DateTime @default(now())
+}
+
+// ===== 素材管理 =====
+
+model Material {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  name      String
+  type      String   // "image" | "video" | "document" | "other"
+  ossKey    String?  // OSS object key (生产)
+  localPath String?  // 本地路径 (开发)
+  size      Int
+  mimeType  String
+  tags      String[] // 自定义标签
+  createdAt DateTime @default(now())
+}
+
+// ===== 用户偏好 =====
+
+model UserPreference {
+  id     String @id @default(cuid())
+  userId String
+  key    String // e.g. "language", "default_timerange"
+  value  Json   // 灵活 JSON 值
+  user   User   @relation(fields: [userId], references: [id])
+
+  @@unique([userId, key])
+}
+
+// ===== Schema 缓存 =====
+
+model SchemaCache {
+  id             String   @id @default(cuid())
+  userId         String
+  externalDbId   String
+  schemaJson     Json     // { tables: [{ name, columns, types }] }
+  refreshedAt    DateTime @default(now())
+  user           User     @relation(fields: [userId], references: [id])
+
+  @@unique([userId, externalDbId])
+}
+
+// ===== 查询模板 =====
+
+model QueryTemplate {
+  id          String   @id @default(cuid())
+  userId      String
+  name        String   // 用户命名的模板名
+  description String?  // 自然语言意图
+  sqlTemplate String   // 参数化 SQL 模板
+  useCount    Int      @default(0)
+  user        User     @relation(fields: [userId], references: [id])
+  createdAt   DateTime @default(now())
+}
+
+// ===== 外部数据库 =====
+
+model ExternalDatabase {
+  id                String   @id @default(cuid())
+  userId            String
+  name              String   // 用户给连接起的名字
+  host              String
+  port              Int
+  database          String
+  username          String
+  encryptedPassword String   // KMS/AES-256-GCM 加密后的密文
+  sslEnabled        Boolean  @default(true)
+  lastConnectedAt   DateTime?
+  user              User     @relation(fields: [userId], references: [id])
+  createdAt         DateTime @default(now())
+}
+
+// ===== 审计日志 =====
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  action    String   // "sql.execute" | "sandbox.exec" | "db.connect" | "auth.login"
+  resource  String?  // 操作目标 (e.g. conversationId, externalDbId)
+  detail    Json?    // 额外上下文
+  ip        String?
+  createdAt DateTime @default(now())
+}

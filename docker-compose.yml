@@ -1,0 +1,96 @@
+# Docker Compose 配置 - 素材管理与 AI 问答平台
+# 服务：app (Next.js), db (PostgreSQL), nginx (反向代理)
+
+services:
+  # PostgreSQL 数据库
+  db:
+    image: postgres:16-alpine
+    container_name: material-chat-db
+    environment:
+      POSTGRES_DB: material_chat
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-changeme123}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app -d material_chat"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Next.js 应用
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: material-chat-app
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env
+    environment:
+      # 数据库配置
+      POSTGRES_HOST: db
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: material_chat
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-changeme123}
+      POSTGRES_SSL: "false"
+      DATABASE_URL: postgresql://app:${DB_PASSWORD:-changeme123}@db:5432/material_chat
+
+      # Kimi API 配置
+      KIMI_API_KEY: ${KIMI_API_KEY}
+      KIMI_BASE_URL: ${KIMI_BASE_URL:-https://api.kimi.com/coding}
+      KIMI_MODEL: ${KIMI_MODEL:-claude-sonnet-4-6}
+
+      # 存储配置
+      STORAGE_TYPE: ${STORAGE_TYPE:-local}
+      STORAGE_BASE_DIR: /app/storage
+      STORAGE_BASE_URL: ${STORAGE_BASE_URL:-http://localhost:3000/files}
+
+      # 沙盒配置
+      SANDBOX_TYPE: ${SANDBOX_TYPE:-vercel}
+      VERCEL_SANDBOX_API_KEY: ${VERCEL_SANDBOX_API_KEY}
+
+      # NextAuth 配置
+      NEXTAUTH_URL: ${NEXTAUTH_URL:-http://localhost:3000}
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET}
+
+      NODE_ENV: production
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+    volumes:
+      - app_storage:/app/storage
+    healthcheck:
+      test: ["CMD-SHELL", "wget --quiet --tries=1 --spider http://localhost:3000/api/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Nginx 反向代理
+  nginx:
+    image: nginx:alpine
+    container_name: material-chat-nginx
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - app
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+    driver: local
+  app_storage:
+    driver: local
+
+networks:
+  material-chat-network:
+    driver: bridge
