@@ -3,7 +3,10 @@ import { mkdir, rename, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
 const BASE_URL = process.env.BASE_URL || 'http://127.0.0.1:3000';
-const OUTPUT_DIR = resolve('uat-media');
+const OUTPUT_DIR = resolve(
+  process.env.UAT_OUTPUT_DIR ||
+    (process.env.CI ? '/tmp/material-chat-uat-media' : 'uat-media'),
+);
 const VIDEO_DIR = resolve(OUTPUT_DIR, 'videos');
 const SCREENSHOT_DIR = resolve(OUTPUT_DIR, 'screenshots');
 const DIAGNOSTIC_DIR = resolve(OUTPUT_DIR, 'diagnostics');
