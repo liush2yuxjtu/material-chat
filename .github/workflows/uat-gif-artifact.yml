@@ -50,6 +50,7 @@ jobs:
         run: |
           set -euo pipefail
           npm ci
+          npm install --no-save --package-lock=false @prisma/adapter-pg@7.8.0
           npx playwright install --with-deps chromium
 
       - name: Prepare UAT-compatible Prisma runtime
@@ -57,22 +58,68 @@ jobs:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/material_chat_test
         run: |
           set -euo pipefail
-          mkdir -p artifacts/uat-diagnostics
+          mkdir -p artifacts/uat-diagnostics src/lib
+
+          cat > src/lib/uat-prisma.ts <<'TS'
+          import { PrismaPg } from '@prisma/adapter-pg';
+          import { PrismaClient } from '@prisma/client';
+
+          const connectionString = process.env.DATABASE_URL;
+          if (!connectionString) {
+            throw new Error('DATABASE_URL is required for UAT recording');
+          }
+
+          const globalForPrisma = globalThis as unknown as {
+            uatPrisma?: PrismaClient;
+          };
+          const adapter = new PrismaPg({ connectionString });
+
+          export const prisma =
+            globalForPrisma.uatPrisma ?? new PrismaClient({ adapter });
+
+          if (process.env.NODE_ENV !== 'production') {
+            globalForPrisma.uatPrisma = prisma;
+          }
+          TS
+
           python - <<'PY'
           from pathlib import Path
-          schema = Path('prisma/schema.prisma')
-          text = schema.read_text(encoding='utf-8')
-          marker = '  provider = "prisma-client-js"\n'
-          if 'engineType = "binary"' not in text:
-              if marker not in text:
-                  raise SystemExit('Prisma generator marker not found')
-              text = text.replace(marker, marker + '  engineType = "binary"\n', 1)
-          schema.write_text(text, encoding='utf-8')
+
+          simple_files = [
+              Path('src/auth.ts'),
+              Path('src/app/api/v1/auth/register/route.ts'),
+              Path('src/application/use-cases/ChatUseCase.ts'),
+              Path('src/application/use-cases/ListMaterialsUseCase.ts'),
+              Path('src/application/use-cases/UploadMaterialUseCase.ts'),
+              Path('src/infrastructure/CompositionRoot.ts'),
+          ]
+
+          for path in simple_files:
+              text = path.read_text(encoding='utf-8')
+              old_import = "import { PrismaClient } from '@prisma/client';"
+              if old_import in text:
+                  text = text.replace(old_import, "import { prisma } from '@/lib/uat-prisma';", 1)
+              text = text.replace('const prisma = new PrismaClient();\n', '')
+              path.write_text(text, encoding='utf-8')
+
+          memory_path = Path('src/adapters/postgres/PostgresMemoryAdapter.ts')
+          memory = memory_path.read_text(encoding='utf-8')
+          import_line = "import { Prisma, PrismaClient } from '@prisma/client';"
+          if "@/lib/uat-prisma" not in memory:
+              memory = memory.replace(
+                  import_line,
+                  import_line + "\nimport { prisma as uatPrisma } from '@/lib/uat-prisma';",
+                  1,
+              )
+          memory = memory.replace(
+              'this.prisma = prisma || new PrismaClient();',
+              'this.prisma = prisma || uatPrisma;',
+          )
+          memory_path.write_text(memory, encoding='utf-8')
           PY
 
-          # The repository middleware imports the Node database-backed auth module
-          # into the Edge runtime. UAT pages and APIs still perform their own auth,
-          # so disable only this checkout's middleware during browser recording.
+          # The repository middleware imports database-backed auth into Edge.
+          # Disable it only in this Actions checkout; API routes still validate auth.
           if [ -f src/middleware.ts ]; then
             mv src/middleware.ts artifacts/uat-diagnostics/middleware.ts.disabled
           fi
