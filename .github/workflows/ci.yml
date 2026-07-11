@@ -25,7 +25,8 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npm run lint
+      - name: Lint
+        run: npm run lint 2>&1 | tail -n 120
 
   typecheck:
     name: typecheck
@@ -37,7 +38,8 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npx tsc --noEmit
+      - name: Typecheck
+        run: npx tsc --noEmit 2>&1 | tail -n 120
 
   prisma:
     name: prisma
@@ -65,7 +67,8 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npx prisma format --check
+      - name: Check Prisma formatting
+        run: npx prisma format --check 2>&1 | tail -n 120
       - run: npx prisma validate
       - run: npx prisma generate
       - run: npx prisma migrate deploy
@@ -86,7 +89,8 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npx prisma generate
-      - run: npm run build
+      - name: Build
+        run: npm run build 2>&1 | tail -n 120
 
   playwright:
     name: playwright
