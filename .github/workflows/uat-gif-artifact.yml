@@ -118,14 +118,12 @@ jobs:
           memory_path.write_text(memory, encoding='utf-8')
           PY
 
-          # The repository middleware imports database-backed auth into Edge.
-          # Disable it only in this Actions checkout; API routes still validate auth.
           if [ -f src/middleware.ts ]; then
             mv src/middleware.ts artifacts/uat-diagnostics/middleware.ts.disabled
           fi
 
           npx prisma generate 2>&1 | tee artifacts/uat-diagnostics/prisma-generate.log
-          npx prisma migrate deploy 2>&1 | tee artifacts/uat-diagnostics/prisma-migrate.log
+          npx prisma db push --skip-generate 2>&1 | tee artifacts/uat-diagnostics/prisma-db-push.log
 
       - name: Start Material Chat development server
         env:
