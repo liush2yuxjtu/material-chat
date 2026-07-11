@@ -67,13 +67,10 @@ jobs:
           npx prisma generate
           npx prisma migrate deploy
 
-      - name: Build application
-        run: npm run build
-
-      - name: Start application
+      - name: Start development application
         run: |
           set -euo pipefail
-          npm run start -- --hostname 127.0.0.1 --port 3000 > /tmp/material-chat-uat-server.log 2>&1 &
+          npm run dev -- --hostname 127.0.0.1 --port 3000 > /tmp/material-chat-uat-server.log 2>&1 &
           echo $! > /tmp/material-chat-uat-server.pid
           for attempt in $(seq 1 90); do
             if curl -fsS http://127.0.0.1:3000 >/dev/null; then
