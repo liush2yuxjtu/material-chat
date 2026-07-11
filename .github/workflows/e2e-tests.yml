@@ -1,0 +1,168 @@
+name: UAT — E2E 测试（Playwright 快照 + 视频）
+
+on:
+  # 手动触发：支持指定测试范围和目标 URL
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: '测试目标 URL（留空则本地构建并测试）'
+        required: false
+        default: ''
+      test_grep:
+        description: '只跑匹配的测试（如 "UAT-01" 跑注册测试，"UAT-0[1-4]" 跑前4个）'
+        required: false
+        default: ''
+
+  # 每个 PR 自动运行
+  pull_request:
+    branches: [main, master]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+
+  # 合并到 main 后回归检查
+  push:
+    branches: [main, master]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+
+concurrency:
+  group: uat-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  uat:
+    name: Playwright UAT（快照 + 视频）
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    env:
+      CI: true
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: material_chat_test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: 安装依赖
+        run: npm ci
+
+      - name: 安装 Playwright 浏览器
+        run: npx playwright install --with-deps chromium
+
+      - name: 生成 Prisma Client
+        run: npx prisma generate
+
+      - name: 运行数据库迁移
+        run: npx prisma migrate deploy
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/material_chat_test
+
+      - name: 构建应用
+        run: npm run build
+        env:
+          NEXTAUTH_SECRET: test-secret-key-for-ci-uat
+          NEXTAUTH_URL: http://localhost:3000
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/material_chat_test
+
+      - name: 运行 UAT 测试
+        id: playwright
+        run: |
+          GREP="${{ github.event.inputs.test_grep }}"
+          if [ -n "$GREP" ]; then
+            echo "只运行匹配: $GREP"
+            npx playwright test --grep "$GREP"
+          else
+            npx playwright test
+          fi
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/material_chat_test
+          NEXTAUTH_SECRET: test-secret-key-for-ci-uat
+          NEXTAUTH_URL: http://localhost:3000
+        continue-on-error: true
+
+      # ── 分门别类上传 artifacts ──
+
+      - name: 上传 HTML 报告
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-html-report
+          path: playwright-report/
+          retention-days: 30
+
+      - name: 上传测试结果 JSON
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-json
+          path: test-results/test-results.json
+          retention-days: 30
+
+      - name: 上传截图（全量）
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots
+          path: |
+            test-results/artifacts/
+            test-results/**/*.png
+          retention-days: 30
+
+      - name: 上传视频
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: videos
+          path: test-results/videos/
+          retention-days: 14
+
+      - name: 上传 Trace（回放调试用）
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-traces
+          path: test-results/**/trace.zip
+          retention-days: 14
+
+      # ── 测试摘要 ──
+
+      - name: 生成测试摘要
+        if: always()
+        run: |
+          {
+            echo "## UAT 测试结果"
+            echo ""
+            echo "| 项目 | 链接 |"
+            echo "|------|------|"
+            echo "| HTML 报告 | [查看](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) |"
+            echo "| 触发方式 | ${{ github.event_name == 'workflow_dispatch' && '手动触发' || github.event_name == 'pull_request' && 'PR 自动' || 'Push 自动' }} |"
+            if [ "${{ github.event.inputs.test_grep }}" != "" ]; then
+              echo "| 测试过滤 | ${{ github.event.inputs.test_grep }} |"
+            fi
+            echo ""
+            echo "### 本地复现"
+            echo '```bash'
+            echo 'npx playwright test'
+            echo 'npx playwright show-report'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
