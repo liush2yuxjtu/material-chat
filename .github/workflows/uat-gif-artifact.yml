@@ -123,7 +123,7 @@ jobs:
           fi
 
           npx prisma generate 2>&1 | tee artifacts/uat-diagnostics/prisma-generate.log
-          npx prisma db push --skip-generate 2>&1 | tee artifacts/uat-diagnostics/prisma-db-push.log
+          npx prisma db push 2>&1 | tee artifacts/uat-diagnostics/prisma-db-push.log
 
       - name: Start Material Chat development server
         env:
