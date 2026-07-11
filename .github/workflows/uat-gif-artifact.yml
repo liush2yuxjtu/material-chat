@@ -1,0 +1,86 @@
+name: UAT GIF Artifact
+
+on:
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  record-uat-gif:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CI: true
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/material_chat_test
+      NEXTAUTH_SECRET: test-secret-key-for-ci-uat
+      NEXTAUTH_URL: http://localhost:3000
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: material_chat_test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Prepare database
+        run: |
+          npx prisma generate
+          npx prisma migrate deploy
+
+      - name: Build application
+        run: npm run build
+
+      - name: Run Playwright UAT
+        run: npx playwright test
+
+      - name: Collect recordings
+        if: always()
+        run: |
+          mkdir -p uat-media
+          find test-results -type f -name '*.webm' -exec cp {} uat-media/ \; 2>/dev/null || true
+          find test-results -type f -name '*.png' -exec cp {} uat-media/ \; 2>/dev/null || true
+
+      - name: Convert first recording to GIF
+        if: always()
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+          video="$(find uat-media -type f -name '*.webm' | sort | head -n 1 || true)"
+          test -n "$video"
+          ffmpeg -y -i "$video" -t 30 \
+            -vf "fps=8,scale=960:-1:flags=lanczos,split[s0][s1];[s0]palettegen=max_colors=128[p];[s1][p]paletteuse=dither=bayer:bayer_scale=4" \
+            uat-media/material-chat-uat.gif
+
+      - name: Upload UAT video and GIF
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: material-chat-uat-video-and-gif
+          path: uat-media/
+          if-no-files-found: error
+          retention-days: 30
