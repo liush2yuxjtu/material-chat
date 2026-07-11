@@ -1,32 +1,41 @@
-name: UAT GIF Artifact
+name: UAT Visual Evidence
 
 on:
   pull_request:
     branches: [main, master]
+    types: [opened, synchronize, reopened, ready_for_review]
   workflow_dispatch:
 
+concurrency:
+  group: uat-visual-evidence-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 permissions:
-  contents: read
+  contents: write
+  actions: read
+  pull-requests: write
 
 jobs:
-  record-uat-gif:
+  record-uat-evidence:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
       CI: true
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/material_chat_test
-      NEXTAUTH_SECRET: test-secret-key-for-ci-uat
+      AUTH_SECRET: ci-only-uat-evidence-secret-at-least-32-characters
+      NEXTAUTH_SECRET: ci-only-uat-evidence-secret-at-least-32-characters
       NEXTAUTH_URL: http://127.0.0.1:3000
 
     services:
       postgres:
-        image: postgres:16-alpine
+        image: postgres:17-alpine
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
           POSTGRES_DB: material_chat_test
         options: >-
-          --health-cmd pg_isready
+          --health-cmd "pg_isready -U postgres -d material_chat_test"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
@@ -34,29 +43,42 @@ jobs:
           - 5432:5432
 
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
+      - name: Checkout PR head
+        uses: actions/checkout@v5
         with:
-          node-version: '22'
+          ref: ${{ github.event.pull_request.head.ref || github.ref_name }}
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
           cache: npm
 
       - name: Install dependencies
         run: |
+          set -euo pipefail
           npm ci
           npx playwright install --with-deps chromium
 
       - name: Prepare database
         run: |
+          set -euo pipefail
           npx prisma generate
           npx prisma migrate deploy
 
+      - name: Build application
+        run: npm run build
+
       - name: Start application
         run: |
-          npm run dev -- --hostname 127.0.0.1 --port 3000 > /tmp/material-chat-uat-server.log 2>&1 &
+          set -euo pipefail
+          npm run start -- --hostname 127.0.0.1 --port 3000 > /tmp/material-chat-uat-server.log 2>&1 &
           echo $! > /tmp/material-chat-uat-server.pid
           for attempt in $(seq 1 90); do
-            if curl -fsS http://127.0.0.1:3000 >/dev/null; then exit 0; fi
+            if curl -fsS http://127.0.0.1:3000 >/dev/null; then
+              exit 0
+            fi
             sleep 2
           done
           cat /tmp/material-chat-uat-server.log
@@ -64,48 +86,142 @@ jobs:
 
       - name: Record browser UAT smoke flow
         run: |
+          set -euo pipefail
+          rm -rf uat-media
           mkdir -p uat-media/videos uat-media/screenshots
-          cat > record-material-chat.mjs <<'NODE'
+          cat > "$RUNNER_TEMP/record-material-chat.mjs" <<'NODE'
           import { chromium } from 'playwright';
           import fs from 'node:fs';
+
           const browser = await chromium.launch({ headless: true });
           const context = await browser.newContext({
             viewport: { width: 1440, height: 900 },
-            recordVideo: { dir: 'uat-media/videos', size: { width: 1440, height: 900 } }
+            recordVideo: { dir: 'uat-media/videos', size: { width: 1440, height: 900 } },
           });
           const page = await context.newPage();
-          await page.goto('http://127.0.0.1:3000', { waitUntil: 'domcontentloaded', timeout: 120000 });
-          await page.waitForTimeout(3000);
-          await page.screenshot({ path: 'uat-media/screenshots/material-chat-home.png', fullPage: true });
-          const links = page.getByRole('link');
-          const count = await links.count();
-          if (count > 0) {
-            await links.first().hover().catch(() => undefined);
-            await page.waitForTimeout(1500);
-          }
-          await page.mouse.wheel(0, 700);
-          await page.waitForTimeout(2500);
-          await page.mouse.wheel(0, -700);
-          await page.waitForTimeout(2500);
+
+          const capture = async (route, filename) => {
+            await page.goto(`http://127.0.0.1:3000${route}`, {
+              waitUntil: 'networkidle',
+              timeout: 120000,
+            });
+            await page.waitForTimeout(1200);
+            await page.screenshot({
+              path: `uat-media/screenshots/${filename}`,
+              fullPage: true,
+            });
+          };
+
+          await capture('/', '01-home.png');
+          await capture('/register', '02-register.png');
+          await page.getByLabel('姓名').fill('Visual Evidence User').catch(() => undefined);
+          await page.getByLabel('邮箱').fill('visual-evidence@example.com').catch(() => undefined);
+          await page.getByLabel(/密码/).fill('test123456').catch(() => undefined);
+          await page.waitForTimeout(1000);
+          await page.screenshot({ path: 'uat-media/screenshots/03-register-filled.png', fullPage: true });
+          await capture('/login', '04-login.png');
+
           await context.close();
           await browser.close();
-          fs.writeFileSync('uat-media/summary.txt', `Recorded ${new Date().toISOString()}\nURL: http://127.0.0.1:3000\n`);
+          fs.writeFileSync(
+            'uat-media/summary.md',
+            `# Material Chat UAT visual evidence\n\nRecorded: ${new Date().toISOString()}\n\nRoutes: /, /register, /login\n`,
+          );
           NODE
-          node ./record-material-chat.mjs
+          node "$RUNNER_TEMP/record-material-chat.mjs"
 
-      - name: Convert video to GIF
+      - name: Convert WebM to inline GIF
         run: |
+          set -euo pipefail
           sudo apt-get update
           sudo apt-get install -y ffmpeg
-          video="$(find uat-media/videos -type f -name '*.webm' | sort | head -n 1)"
+          video="$(find uat-media/videos -type f -name '*.webm' -size +0c | sort | head -n 1)"
           test -n "$video"
-          ffmpeg -y -i "$video" -t 20 -vf "fps=8,scale=960:-1:flags=lanczos,split[s0][s1];[s0]palettegen=max_colors=128[p];[s1][p]paletteuse=dither=bayer:bayer_scale=4" uat-media/material-chat-uat.gif
-          test -s uat-media/material-chat-uat.gif
+          ffmpeg -y -i "$video" -t 20 \
+            -vf "fps=8,scale=960:-1:flags=lanczos,split[s0][s1];[s0]palettegen=max_colors=128[p];[s1][p]paletteuse=dither=bayer:bayer_scale=4" \
+            uat-media/recording-preview.gif
 
-      - name: Upload UAT video and GIF
-        uses: actions/upload-artifact@v4
+      - name: Verify visual evidence contract
+        run: |
+          set -euo pipefail
+          test "$(find uat-media/screenshots -type f -name '*.png' -size +0c | wc -l)" -ge 4
+          test -n "$(find uat-media/videos -type f -name '*.webm' -size +0c -print -quit)"
+          test -s uat-media/recording-preview.gif
+          find uat-media -type f -print -exec stat --format='  %s bytes' {} \;
+
+      - name: Upload UAT evidence artifact
+        id: upload
+        if: ${{ always() && !cancelled() }}
+        uses: actions/upload-artifact@v5
         with:
-          name: material-chat-uat-video-and-gif
+          name: material-chat-uat-visual-evidence-pr-${{ github.event.pull_request.number || 'manual' }}-run-${{ github.run_id }}
           path: uat-media/
           if-no-files-found: error
           retention-days: 30
+
+      - name: Preserve trusted PR body renderer
+        if: github.event_name == 'pull_request'
+        id: renderer
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --depth=1 origin "$BASE_SHA"
+          renderer="$RUNNER_TEMP/update-pr-evidence.mjs"
+          git show "${BASE_SHA}:scripts/update-pr-evidence.mjs" > "$renderer"
+          echo "path=$renderer" >> "$GITHUB_OUTPUT"
+
+      - name: Publish UAT media to PR branch
+        if: github.event_name == 'pull_request'
+        id: publish_media
+        shell: bash
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_BRANCH: ${{ github.event.pull_request.head.ref }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git pull --rebase origin "$HEAD_BRANCH"
+
+          dest="pr-evidence/pr-${PR_NUMBER}/uat-smoke/latest"
+          rm -rf "$dest"
+          mkdir -p "$dest"
+          cp -R uat-media/. "$dest/"
+          find "$dest" -type f | sort > "$dest/manifest.txt"
+
+          git add -f "$dest"
+          if ! git diff --cached --quiet; then
+            git commit -m "chore: publish PR ${PR_NUMBER} UAT visual evidence [skip ci]"
+            pushed=false
+            for attempt in 1 2 3; do
+              if git push origin HEAD:"$HEAD_BRANCH"; then
+                pushed=true
+                break
+              fi
+              git fetch origin "$HEAD_BRANCH"
+              git rebase "origin/$HEAD_BRANCH"
+            done
+            test "$pushed" = true
+          fi
+
+          echo "media_path=$dest" >> "$GITHUB_OUTPUT"
+          echo "media_ref=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Update PR with inline UAT evidence
+        if: github.event_name == 'pull_request'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          ARTIFACT_URL: ${{ steps.upload.outputs.artifact-url }}
+          TEST_OUTCOME: success
+          GITHUB_SHA: ${{ github.event.pull_request.head.sha }}
+          EVIDENCE_TITLE: Material Chat UAT 视觉证据
+          EVIDENCE_MARKER: uat-smoke-evidence
+          EVIDENCE_MEDIA_PATH: ${{ steps.publish_media.outputs.media_path }}
+          EVIDENCE_MEDIA_REF: ${{ steps.publish_media.outputs.media_ref }}
+        run: node "${{ steps.renderer.outputs.path }}"
