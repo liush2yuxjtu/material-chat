@@ -5,4 +5,4 @@ pr-evidence/pr-2/uat-smoke/latest/screenshots/02-register.png
 pr-evidence/pr-2/uat-smoke/latest/screenshots/03-register-filled.png
 pr-evidence/pr-2/uat-smoke/latest/screenshots/04-login.png
 pr-evidence/pr-2/uat-smoke/latest/summary.md
-pr-evidence/pr-2/uat-smoke/latest/videos/page@f94be58adfdbe7a88e41e690ef11d66e.webm
+pr-evidence/pr-2/uat-smoke/latest/videos/page@e105432aed64e35b19f6acea90eb55fe.webm
