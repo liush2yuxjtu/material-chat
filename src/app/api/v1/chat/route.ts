@@ -25,6 +25,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const userId = session.user.id;
     const body = await request.json();
     const validatedData = chatRequestSchema.parse(body);
     const chatUseCase = new ChatUseCase(new MockKimiAdapter());
@@ -34,7 +35,7 @@ export async function POST(request: NextRequest) {
       async start(controller) {
         try {
           for await (const chunk of chatUseCase.streamChat({
-            userId: session.user.id,
+            userId,
             conversationId: validatedData.conversationId,
             message: validatedData.message,
           })) {
