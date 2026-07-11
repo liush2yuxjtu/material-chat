@@ -194,23 +194,31 @@ jobs:
           fi
           exit "$status"
 
-      - name: Convert each UAT video to GIF
+      - name: Convert UAT videos to GIF
         run: |
           set -euo pipefail
           sudo apt-get update
           sudo apt-get install -y ffmpeg
           mkdir -p uat-media/gifs
-          count=0
-          while IFS= read -r video; do
-            base="$(basename "$video" .webm)"
-            gif="uat-media/gifs/${base}.gif"
-            ffmpeg -y -i "$video" -t 45 \
-              -vf "fps=8,scale=960:-1:flags=lanczos,split[s0][s1];[s0]palettegen=max_colors=128[p];[s1][p]paletteuse=dither=bayer:bayer_scale=4" \
-              "$gif"
-            test -s "$gif"
-            count=$((count + 1))
-          done < <(find uat-media/videos -type f -name '*.webm' -size +0c | sort)
-          test "$count" -eq 2
+
+          first_video='uat-media/videos/UAT-01-04-register-chat.webm'
+          second_video='uat-media/videos/UAT-02-06-07-login-upload-filter.webm'
+          first_gif='uat-media/gifs/UAT-01-04-register-chat.gif'
+          second_gif='uat-media/gifs/UAT-02-06-07-login-upload-filter.gif'
+
+          test -s "$first_video"
+          test -s "$second_video"
+
+          ffmpeg -y -threads 1 -i "$first_video" -t 45 \
+            -vf "fps=7,scale=800:-2:flags=lanczos,split[s0][s1];[s0]palettegen=max_colors=96[p];[s1][p]paletteuse=dither=bayer:bayer_scale=5" \
+            "$first_gif"
+
+          ffmpeg -y -threads 1 -i "$second_video" -t 45 \
+            -vf "fps=7,scale=800:-2:flags=lanczos,split[s0][s1];[s0]palettegen=max_colors=96[p];[s1][p]paletteuse=dither=bayer:bayer_scale=5" \
+            "$second_gif"
+
+          test -s "$first_gif"
+          test -s "$second_gif"
 
       - name: Verify UAT evidence
         run: |
