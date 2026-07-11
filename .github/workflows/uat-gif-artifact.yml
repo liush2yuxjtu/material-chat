@@ -86,8 +86,8 @@ jobs:
           set -euo pipefail
           rm -rf uat-media
           mkdir -p uat-media/videos uat-media/screenshots
-          cat > "$RUNNER_TEMP/record-material-chat.mjs" <<'NODE'
-          import { chromium } from 'playwright';
+          cat > record-material-chat.mjs <<'NODE'
+          import { chromium } from '@playwright/test';
           import fs from 'node:fs';
 
           const browser = await chromium.launch({ headless: true });
@@ -99,10 +99,10 @@ jobs:
 
           const capture = async (route, filename) => {
             await page.goto(`http://127.0.0.1:3000${route}`, {
-              waitUntil: 'networkidle',
+              waitUntil: 'domcontentloaded',
               timeout: 120000,
             });
-            await page.waitForTimeout(1200);
+            await page.waitForTimeout(1500);
             await page.screenshot({
               path: `uat-media/screenshots/${filename}`,
               fullPage: true,
@@ -125,7 +125,8 @@ jobs:
             `# Material Chat UAT visual evidence\n\nRecorded: ${new Date().toISOString()}\n\nRoutes: /, /register, /login\n`,
           );
           NODE
-          node "$RUNNER_TEMP/record-material-chat.mjs"
+          node ./record-material-chat.mjs
+          rm -f record-material-chat.mjs
 
       - name: Convert WebM to inline GIF
         run: |
