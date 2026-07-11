@@ -169,10 +169,16 @@ jobs:
           GOOGLE_CLIENT_SECRET: ci-placeholder-secret
           UAT_EMAIL: uat-recording-${{ github.run_id }}@example.com
           UAT_PASSWORD: uat-test-123456
+          UAT_OUTPUT_DIR: /tmp/material-chat-uat-media
         run: |
-          set -euo pipefail
-          rm -rf uat-media
+          set -uo pipefail
+          rm -rf uat-media /tmp/material-chat-uat-media
           node scripts/record-material-chat-uat.mjs
+          status=$?
+          if [ -d /tmp/material-chat-uat-media ]; then
+            cp -R /tmp/material-chat-uat-media uat-media
+          fi
+          exit "$status"
 
       - name: Convert each UAT video to GIF
         run: |
