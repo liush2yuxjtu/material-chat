@@ -24,8 +24,8 @@ jobs:
       CI: true
       BASE_URL: http://127.0.0.1:3000
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/material_chat_test
-      AUTH_SECRET: ci-only-uat-recording-secret-at-least-32-characters
-      NEXTAUTH_SECRET: ci-only-uat-recording-secret-at-least-32-characters
+      AUTH_SECRET: test-secret-key-for-ci
+      NEXTAUTH_SECRET: test-secret-key-for-ci
       NEXTAUTH_URL: http://127.0.0.1:3000
       GOOGLE_CLIENT_ID: ci-placeholder-client
       GOOGLE_CLIENT_SECRET: ci-placeholder-secret
@@ -34,13 +34,13 @@ jobs:
 
     services:
       postgres:
-        image: postgres:17-alpine
+        image: postgres:16
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
           POSTGRES_DB: material_chat_test
         options: >-
-          --health-cmd "pg_isready -U postgres -d material_chat_test"
+          --health-cmd pg_isready
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
@@ -49,14 +49,14 @@ jobs:
 
     steps:
       - name: Checkout PR head
-        uses: actions/checkout@v5
+        uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.ref || github.ref_name }}
 
       - name: Set up Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 20
           cache: npm
 
       - name: Install dependencies and Chromium
@@ -133,7 +133,7 @@ jobs:
 
       - name: Upload UAT videos and GIFs
         id: upload
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v4
         with:
           name: material-chat-real-uat-videos-and-gifs-pr-${{ github.event.pull_request.number || 'manual' }}-run-${{ github.run_id }}
           path: uat-media/
