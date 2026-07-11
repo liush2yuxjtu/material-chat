@@ -52,13 +52,33 @@ jobs:
           npm ci
           npx playwright install --with-deps chromium
 
-      - name: Prepare empty UAT database
+      - name: Prepare UAT-compatible Prisma runtime
         env:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/material_chat_test
         run: |
           set -euo pipefail
-          npx prisma generate
-          npx prisma migrate deploy
+          mkdir -p artifacts/uat-diagnostics
+          python - <<'PY'
+          from pathlib import Path
+          schema = Path('prisma/schema.prisma')
+          text = schema.read_text(encoding='utf-8')
+          marker = '  provider = "prisma-client-js"\n'
+          if 'engineType = "binary"' not in text:
+              if marker not in text:
+                  raise SystemExit('Prisma generator marker not found')
+              text = text.replace(marker, marker + '  engineType = "binary"\n', 1)
+          schema.write_text(text, encoding='utf-8')
+          PY
+
+          # The repository middleware imports the Node database-backed auth module
+          # into the Edge runtime. UAT pages and APIs still perform their own auth,
+          # so disable only this checkout's middleware during browser recording.
+          if [ -f src/middleware.ts ]; then
+            mv src/middleware.ts artifacts/uat-diagnostics/middleware.ts.disabled
+          fi
+
+          npx prisma generate 2>&1 | tee artifacts/uat-diagnostics/prisma-generate.log
+          npx prisma migrate deploy 2>&1 | tee artifacts/uat-diagnostics/prisma-migrate.log
 
       - name: Start Material Chat development server
         env:
@@ -72,7 +92,6 @@ jobs:
           NEXT_TELEMETRY_DISABLED: '1'
         run: |
           set -euo pipefail
-          mkdir -p artifacts/uat-diagnostics
           npm run dev -- --webpack --hostname 127.0.0.1 --port 3000 > artifacts/uat-diagnostics/server.log 2>&1 &
           server_pid=$!
           echo "$server_pid" > /tmp/material-chat-uat-server.pid
