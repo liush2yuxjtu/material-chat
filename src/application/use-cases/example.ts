@@ -7,9 +7,8 @@ import { PostgresMemoryAdapter } from '../../adapters/postgres/PostgresMemoryAda
 import { PersistMemoryUseCase } from './PersistMemoryUseCase';
 import { RecallMemoryUseCase } from './RecallMemoryUseCase';
 
-// 初始化适配器和用例
-const dbUrl = process.env.DATABASE_URL || 'postgresql://localhost:5432/material_chat';
-const memoryAdapter = new PostgresMemoryAdapter(dbUrl);
+// 初始化适配器和用例；PrismaClient 会从 DATABASE_URL 读取连接配置。
+const memoryAdapter = new PostgresMemoryAdapter();
 const persistMemory = new PersistMemoryUseCase(memoryAdapter);
 const recallMemory = new RecallMemoryUseCase(memoryAdapter);
 
