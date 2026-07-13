@@ -3,9 +3,8 @@
  * 支持分页、标签筛选、类型筛选
  */
 
-import { Prisma, PrismaClient } from '@prisma/client';
-
-const prisma = new PrismaClient();
+import { Prisma } from '@prisma/client';
+import { prisma } from '@/lib/prisma';
 
 export interface ListMaterialsRequest {
   userId: string;
