@@ -7,7 +7,7 @@ These ten cases define acceptance for named users completing specific chat and m
 **Task:** Create an account and reach the authenticated home page.
 **Preconditions:** Alice's email is not registered.
 **Steps:** Open registration; enter valid name, email, and password; submit.
-**Acceptance criteria:** Account is created once; Alice is authenticated or directed to login according to product behavior; validation errors are absent; password is never displayed or logged.
+**Acceptance criteria:** Account is created exactly once; Alice is automatically signed in and redirected to `/chat`; validation errors are absent; the password is never displayed or logged.
 
 ## UAT-02 — Marcus Tan signs in and signs out
 **Person:** Marcus Tan, returning learner.
