@@ -39,8 +39,8 @@ jobs:
       - name: Generate Prisma Client
         run: npx prisma generate
 
-      - name: Run migrations
-        run: npx prisma migrate deploy
+      - name: Create CI database schema
+        run: npx prisma db push --skip-generate
         env:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/material_chat_test
 
@@ -51,7 +51,7 @@ jobs:
         run: npm run build
         env:
           NEXTAUTH_SECRET: test-secret-key-for-ci
-          NEXTAUTH_URL: http://localhost:3000
+          NEXTAUTH_URL: http://127.0.0.1:3000
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/material_chat_test
 
   docker:
