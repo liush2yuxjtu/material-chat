@@ -1,4 +1,5 @@
 import { Prisma, PrismaClient } from '@prisma/client';
+import { prisma as defaultPrisma } from '@/lib/prisma';
 import {
   MemoryPort,
   MessageData,
@@ -20,8 +21,8 @@ function toPrismaJson(value: unknown) {
 export class PostgresMemoryAdapter implements MemoryPort {
   private prisma: PrismaClient;
 
-  constructor(prisma?: PrismaClient) {
-    this.prisma = prisma || new PrismaClient();
+  constructor(prisma: PrismaClient = defaultPrisma) {
+    this.prisma = prisma;
   }
 
   async close(): Promise<void> {
