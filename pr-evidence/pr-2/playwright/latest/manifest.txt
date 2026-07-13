@@ -1,1 +1,0 @@
-pr-evidence/pr-2/playwright/latest/manifest.txt
