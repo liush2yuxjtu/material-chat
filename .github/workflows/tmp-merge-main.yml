@@ -1,9 +1,9 @@
 name: Temporary merge main into PR branch
 
 on:
-  pull_request:
-    types: [synchronize]
-    branches: [main]
+  push:
+    branches:
+      - agent/detailed-uat-workflow
     paths:
       - '.github/workflows/tmp-merge-main.yml'
 
@@ -12,12 +12,12 @@ permissions:
 
 jobs:
   merge-main:
-    if: github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'github-actions[bot]'
+    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.head_ref }}
+          ref: agent/detailed-uat-workflow
           fetch-depth: 0
 
       - name: Merge current main without rewriting history
@@ -32,4 +32,4 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git merge --no-ff origin/main -m 'Merge main into agent/detailed-uat-workflow'
-          git push origin "HEAD:${{ github.head_ref }}"
+          git push origin HEAD:agent/detailed-uat-workflow
