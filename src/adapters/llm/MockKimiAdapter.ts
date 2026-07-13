@@ -1,64 +1,48 @@
 /**
  * Mock Kimi LLM 适配器
- * 用于开发和测试阶段，返回固定的流式响应
+ * 用于开发和测试阶段，返回确定性的流式响应
  */
 
-import { LLMPort, Message, StreamChunk } from '@/shared/ports/LLMPort';
+import {
+  LLMPort,
+  ChatMessage,
+  LLMOptions,
+  DatabaseSchema,
+} from '@/shared/ports/LLMPort';
 
 export class MockKimiAdapter implements LLMPort {
-  /**
-   * 流式生成模拟响应
-   * @param messages 对话历史
-   * @param systemPrompt 系统提示词（可选）
-   * @returns 异步生成器，逐块返回固定的模拟响应
-   */
-  async *stream(
-    messages: Message[],
-    systemPrompt?: string
-  ): AsyncIterableIterator<StreamChunk> {
-    // 模拟响应的固定内容（包含MOCK标记）
-    const mockTokens = [
-      '[MOCK] ',
-      '你好',
-      '，',
-      '我是',
-      '模拟',
-      '的',
-      ' AI ',
-      '助手',
-      '。',
-      '这是',
-      '一个',
-      '测试',
-      '响应',
-      '。'
-    ];
+  async *streamChat(
+    messages: ChatMessage[],
+    options?: LLMOptions,
+  ): AsyncGenerator<string, void, unknown> {
+    const response = await this.chat(messages, options);
+    const chunks = response.match(/.{1,8}/gu) || [response];
 
-    // 逐个token返回，模拟真实的流式输出
-    for (const token of mockTokens) {
-      yield {
-        type: 'text',
-        content: token
-      };
-
-      // 模拟网络延迟（50ms per token）
-      await new Promise(resolve => setTimeout(resolve, 50));
+    for (const chunk of chunks) {
+      yield chunk;
+      await this.delay(90);
     }
-
-    // 发送完成信号
-    yield {
-      type: 'done'
-    };
   }
 
-  /**
-   * 非流式生成（用于内部工具调用）
-   * @param messages 对话历史
-   * @param systemPrompt 系统提示词（可选）
-   * @returns 完整的模拟响应文本
-   */
-  async generate(messages: Message[], systemPrompt?: string): Promise<string> {
-    // 返回完整的模拟响应
-    return '[MOCK] 你好，我是模拟的 AI 助手。这是一个测试响应。';
+  async chat(messages: ChatMessage[], _options?: LLMOptions): Promise<string> {
+    const userMessage = messages.at(-1)?.content || '当前问题';
+    return [
+      `针对“${userMessage}”，建议按以下三步整理：`,
+      '1. 按课程主题建立清晰目录，并统一文件命名。',
+      '2. 为每份资料补充标签、来源和学习状态。',
+      '3. 每周归档重点结论，并删除重复或失效内容。',
+    ].join('\n');
+  }
+
+  async generateSQL(
+    _naturalLanguage: string,
+    _schema: DatabaseSchema,
+    _options?: LLMOptions,
+  ): Promise<string> {
+    return 'SELECT 1;';
+  }
+
+  private delay(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 }

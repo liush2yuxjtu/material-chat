@@ -4,9 +4,7 @@
  */
 
 import { MaterialPort, FileData, MaterialMetadata } from '@/shared/ports/MaterialPort';
-import { PrismaClient } from '@prisma/client';
-
-const prisma = new PrismaClient();
+import { prisma } from '@/lib/prisma';
 
 // 文件大小限制：100MB
 const MAX_FILE_SIZE = 100 * 1024 * 1024;

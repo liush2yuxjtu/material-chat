@@ -34,8 +34,8 @@ test.describe('UAT-03 | 未登录权限守卫', () => {
 
   test('AC-005: 首页功能卡片展示正确', async ({ page }) => {
     await page.goto('/')
-    await expect(page.getByText('AI对话')).toBeVisible()
-    await expect(page.getByText('素材管理')).toBeVisible()
-    await expect(page.getByText('SQL查询')).toBeVisible()
+    await expect(page.getByText('AI对话', { exact: true })).toBeVisible()
+    await expect(page.getByText('素材管理', { exact: true })).toBeVisible()
+    await expect(page.getByText('SQL查询', { exact: true })).toBeVisible()
   })
 })

@@ -3,10 +3,16 @@
  * 连接外部 PostgreSQL 数据库执行查询
  */
 
-import { Pool, PoolClient, QueryResult as PgQueryResult } from 'pg';
+import {
+  FieldDef,
+  Pool,
+  PoolClient,
+  QueryResult as PgQueryResult,
+} from 'pg';
 import {
   DatabasePort,
   QueryResult,
+  QueryRow,
   FieldInfo,
   ConnectionConfig,
   SchemaInfo,
@@ -14,6 +20,34 @@ import {
   ColumnInfo,
   IndexInfo,
 } from '@/shared/ports/DatabasePort';
+
+interface TableMetadataRow extends QueryRow {
+  table_schema: string;
+  table_name: string;
+}
+
+interface ColumnMetadataRow extends QueryRow {
+  column_name: string;
+  data_type: string;
+  is_nullable: 'YES' | 'NO';
+  column_default: string | null;
+  is_primary_key: boolean;
+  is_foreign_key: boolean;
+}
+
+interface IndexMetadataRow extends QueryRow {
+  index_name: string;
+  columns: string[];
+  is_unique: boolean;
+}
+
+interface VersionRow extends QueryRow {
+  version: string;
+}
+
+interface ConnectionTestRow extends QueryRow {
+  test: number;
+}
 
 export class PostgresAdapter implements DatabasePort {
   private pool: Pool;
@@ -34,13 +68,16 @@ export class PostgresAdapter implements DatabasePort {
     });
   }
 
-  async query(sql: string, params?: any[]): Promise<QueryResult> {
+  async query<Row extends QueryRow = QueryRow>(
+    sql: string,
+    params: unknown[] = [],
+  ): Promise<QueryResult<Row>> {
     const startTime = Date.now();
     let client: PoolClient | null = null;
 
     try {
       client = await this.pool.connect();
-      const result: PgQueryResult = await client.query(sql, params);
+      const result: PgQueryResult<Row> = await client.query<Row>(sql, params);
       const executionTime = Date.now() - startTime;
 
       return {
@@ -53,9 +90,7 @@ export class PostgresAdapter implements DatabasePort {
       console.error('PostgreSQL 查询错误:', error);
       throw new Error(`数据库查询失败: ${(error as Error).message}`);
     } finally {
-      if (client) {
-        client.release();
-      }
+      client?.release();
     }
   }
 
@@ -73,7 +108,7 @@ export class PostgresAdapter implements DatabasePort {
         ORDER BY table_schema, table_name;
       `;
 
-      const tablesResult = await this.query(tablesQuery);
+      const tablesResult = await this.query<TableMetadataRow>(tablesQuery);
       const tables: TableInfo[] = [];
 
       for (const tableRow of tablesResult.rows) {
@@ -106,7 +141,7 @@ export class PostgresAdapter implements DatabasePort {
 
   async testConnection(): Promise<boolean> {
     try {
-      const result = await this.query('SELECT 1 AS test');
+      const result = await this.query<ConnectionTestRow>('SELECT 1 AS test');
       return result.rows.length === 1 && result.rows[0].test === 1;
     } catch (error) {
       console.error('数据库连接测试失败:', error);
@@ -123,7 +158,7 @@ export class PostgresAdapter implements DatabasePort {
     }
   }
 
-  private mapFields(fields: any[]): FieldInfo[] {
+  private mapFields(fields: FieldDef[]): FieldInfo[] {
     return fields.map((field) => ({
       name: field.name,
       type: this.mapPostgresType(field.dataTypeID),
@@ -153,7 +188,7 @@ export class PostgresAdapter implements DatabasePort {
 
   private async getTableColumns(
     schema: string,
-    tableName: string
+    tableName: string,
   ): Promise<ColumnInfo[]> {
     const columnsQuery = `
       SELECT
@@ -187,12 +222,15 @@ export class PostgresAdapter implements DatabasePort {
       ORDER BY c.ordinal_position;
     `;
 
-    const result = await this.query(columnsQuery, [schema, tableName]);
+    const result = await this.query<ColumnMetadataRow>(
+      columnsQuery,
+      [schema, tableName],
+    );
     return result.rows.map((row) => ({
       name: row.column_name,
       type: row.data_type,
       nullable: row.is_nullable === 'YES',
-      defaultValue: row.column_default,
+      defaultValue: row.column_default ?? undefined,
       isPrimaryKey: row.is_primary_key,
       isForeignKey: row.is_foreign_key,
     }));
@@ -200,7 +238,7 @@ export class PostgresAdapter implements DatabasePort {
 
   private async getTableIndexes(
     schema: string,
-    tableName: string
+    tableName: string,
   ): Promise<IndexInfo[]> {
     const indexesQuery = `
       SELECT
@@ -217,7 +255,10 @@ export class PostgresAdapter implements DatabasePort {
       GROUP BY i.relname, ix.indisunique;
     `;
 
-    const result = await this.query(indexesQuery, [schema, tableName]);
+    const result = await this.query<IndexMetadataRow>(
+      indexesQuery,
+      [schema, tableName],
+    );
     return result.rows.map((row) => ({
       name: row.index_name,
       columns: row.columns,
@@ -227,8 +268,8 @@ export class PostgresAdapter implements DatabasePort {
 
   private async getDatabaseVersion(): Promise<string> {
     try {
-      const result = await this.query('SELECT version()');
-      return result.rows[0].version;
+      const result = await this.query<VersionRow>('SELECT version()');
+      return result.rows[0]?.version ?? 'unknown';
     } catch {
       return 'unknown';
     }

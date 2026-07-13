@@ -13,7 +13,11 @@ export class PersistMemoryUseCase {
    * @param key 偏好键名（如 'language', 'theme', 'defaultDatabase'）
    * @param value 偏好值
    */
-  async saveUserPreference(userId: string, key: string, value: any): Promise<void> {
+  async saveUserPreference(
+    userId: string,
+    key: string,
+    value: unknown,
+  ): Promise<void> {
     await this.memoryPort.savePreference(userId, key, value);
   }
 
@@ -25,16 +29,32 @@ export class PersistMemoryUseCase {
    * @param description 用户意图描述（从自然语言提取）
    * @param sqlTemplate 生成的SQL模板
    */
-  async learnQueryTemplate(userId: string, name: string, description: string, sqlTemplate: string): Promise<void> {
+  async learnQueryTemplate(
+    userId: string,
+    name: string,
+    description: string,
+    sqlTemplate: string,
+  ): Promise<void> {
     // 检查是否已有相似模板
-    const existingTemplate = await this.memoryPort.findMatchingTemplate(userId, description);
+    const existingTemplate = await this.memoryPort.findMatchingTemplate(
+      userId,
+      description,
+    );
 
-    if (existingTemplate && this.isSimilarIntent(existingTemplate.description || '', description)) {
+    if (
+      existingTemplate
+      && this.isSimilarIntent(existingTemplate.description || '', description)
+    ) {
       // 如果已存在相似模板，增加使用次数
       await this.memoryPort.incrementTemplateUse(existingTemplate.id);
     } else {
       // 否则创建新模板
-      await this.memoryPort.saveQueryTemplate(userId, name, description, sqlTemplate);
+      await this.memoryPort.saveQueryTemplate(
+        userId,
+        name,
+        description,
+        sqlTemplate,
+      );
     }
   }
 
@@ -46,7 +66,9 @@ export class PersistMemoryUseCase {
     const keywords1 = this.extractKeywords(intent1);
     const keywords2 = this.extractKeywords(intent2);
 
-    const intersection = keywords1.filter(k => keywords2.includes(k));
+    const intersection = keywords1.filter((keyword) => (
+      keywords2.includes(keyword)
+    ));
     const union = [...new Set([...keywords1, ...keywords2])];
 
     // Jaccard 相似度 > 0.6 认为相似
@@ -61,6 +83,6 @@ export class PersistMemoryUseCase {
       .toLowerCase()
       .replace(/[^\w\s一-龥]/g, '')
       .split(/\s+/)
-      .filter(w => w.length > 1);
+      .filter((word) => word.length > 1);
   }
 }

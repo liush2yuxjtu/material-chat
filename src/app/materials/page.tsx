@@ -5,19 +5,32 @@
 
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useSession, signOut } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
+
+type MaterialType = 'image' | 'video' | 'document' | 'other';
 
 interface Material {
   id: string;
   name: string;
-  type: 'image' | 'video' | 'document' | 'other';
+  type: MaterialType;
   url: string;
   size: number;
   mimeType: string;
   tags: string[];
   createdAt: string;
+}
+
+const materialTypes: readonly MaterialType[] = [
+  'image',
+  'video',
+  'document',
+  'other',
+];
+
+function isMaterialType(value: string): value is MaterialType {
+  return materialTypes.includes(value as MaterialType);
 }
 
 export default function MaterialsPage() {
@@ -34,24 +47,10 @@ export default function MaterialsPage() {
 
   // 文件上传状态
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [uploadType, setUploadType] = useState<'image' | 'video' | 'document' | 'other'>('image');
+  const [uploadType, setUploadType] = useState<MaterialType>('image');
   const [uploadTags, setUploadTags] = useState<string>('');
 
-  // 未登录重定向
-  useEffect(() => {
-    if (status === 'unauthenticated') {
-      router.push('/login');
-    }
-  }, [status, router]);
-
-  // 加载素材列表
-  useEffect(() => {
-    if (status === 'authenticated') {
-      loadMaterials();
-    }
-  }, [status, selectedType, selectedTags]);
-
-  const loadMaterials = async () => {
+  const loadMaterials = useCallback(async () => {
     setLoading(true);
     try {
       const params = new URLSearchParams();
@@ -61,7 +60,7 @@ export default function MaterialsPage() {
       const response = await fetch(`/api/v1/materials?${params}`);
       if (!response.ok) throw new Error('加载失败');
 
-      const data = await response.json();
+      const data: { materials?: Material[] } = await response.json();
       setMaterials(data.materials || []);
     } catch (error) {
       console.error('加载素材失败:', error);
@@ -69,10 +68,30 @@ export default function MaterialsPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [selectedTags, selectedType]);
 
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+  // 未登录重定向
+  useEffect(() => {
+    if (status === 'unauthenticated') {
+      router.push('/login');
+    }
+  }, [status, router]);
+
+  // 加载素材列表；延后到当前 effect 提交后执行，避免同步级联渲染。
+  useEffect(() => {
+    if (status !== 'authenticated') {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      void loadMaterials();
+    }, 0);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [loadMaterials, status]);
+
+  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
     if (!file) return;
 
     // 检查文件大小（100MB）
@@ -105,7 +124,7 @@ export default function MaterialsPage() {
       });
 
       if (!response.ok) {
-        const error = await response.json();
+        const error: { error?: string } = await response.json();
         throw new Error(error.error || '上传失败');
       }
 
@@ -184,7 +203,12 @@ export default function MaterialsPage() {
                 </label>
                 <select
                   value={uploadType}
-                  onChange={(e) => setUploadType(e.target.value as any)}
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    if (isMaterialType(value)) {
+                      setUploadType(value);
+                    }
+                  }}
                   className="block w-full px-3 py-2 border border-gray-300 rounded-md"
                 >
                   <option value="image">图片</option>
@@ -202,7 +226,7 @@ export default function MaterialsPage() {
                 <input
                   type="text"
                   value={uploadTags}
-                  onChange={(e) => setUploadTags(e.target.value)}
+                  onChange={(event) => setUploadTags(event.target.value)}
                   placeholder="例如: 产品, 宣传"
                   className="block w-full px-3 py-2 border border-gray-300 rounded-md"
                 />
@@ -232,7 +256,7 @@ export default function MaterialsPage() {
               <div className="p-4 border-b flex gap-4">
                 <select
                   value={selectedType}
-                  onChange={(e) => setSelectedType(e.target.value)}
+                  onChange={(event) => setSelectedType(event.target.value)}
                   className="px-3 py-2 border border-gray-300 rounded-md"
                 >
                   <option value="">全部类型</option>
@@ -245,7 +269,7 @@ export default function MaterialsPage() {
                 <input
                   type="text"
                   value={selectedTags}
-                  onChange={(e) => setSelectedTags(e.target.value)}
+                  onChange={(event) => setSelectedTags(event.target.value)}
                   placeholder="按标签筛选"
                   className="flex-1 px-3 py-2 border border-gray-300 rounded-md"
                 />
@@ -291,9 +315,9 @@ export default function MaterialsPage() {
                         </p>
                         {material.tags.length > 0 && (
                           <div className="flex flex-wrap gap-1 mt-2">
-                            {material.tags.map((tag, idx) => (
+                            {material.tags.map((tag, index) => (
                               <span
-                                key={idx}
+                                key={index}
                                 className="px-2 py-0.5 bg-blue-50 text-blue-700 text-xs rounded"
                               >
                                 {tag}
@@ -322,7 +346,7 @@ export default function MaterialsPage() {
               src={previewUrl}
               alt="预览"
               className="max-w-full max-h-screen rounded"
-              onClick={(e) => e.stopPropagation()}
+              onClick={(event) => event.stopPropagation()}
             />
           </div>
         </div>

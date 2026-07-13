@@ -3,17 +3,15 @@
  * 用于初始化测试数据
  */
 
-import { PrismaClient } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
-
-const prisma = new PrismaClient();
+import { prisma } from '../src/lib/prisma';
 
 async function main() {
   console.log('🌱 开始 seed 数据...');
 
   // 1. 创建测试用户
   const hashedPassword = await bcrypt.hash('test123', 10);
-  
+
   const user = await prisma.user.upsert({
     where: { email: 'test@example.com' },
     update: {},
@@ -112,8 +110,8 @@ async function main() {
 }
 
 main()
-  .catch((e) => {
-    console.error('❌ Seed 失败:', e);
+  .catch((error) => {
+    console.error('❌ Seed 失败:', error);
     process.exit(1);
   })
   .finally(async () => {

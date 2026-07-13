@@ -1,9 +1,18 @@
-import { PrismaClient } from '@prisma/client';
+import { Prisma, PrismaClient } from '@prisma/client';
+import { prisma as defaultPrisma } from '@/lib/prisma';
 import {
   MemoryPort,
   MessageData,
   QueryTemplateData,
 } from '../../shared/ports/MemoryPort';
+
+function toPrismaJson(value: unknown) {
+  if (value === null || value === undefined) {
+    return Prisma.JsonNull;
+  }
+
+  return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
+}
 
 /**
  * Prisma 实现的 Memory 持久化适配器
@@ -12,8 +21,8 @@ import {
 export class PostgresMemoryAdapter implements MemoryPort {
   private prisma: PrismaClient;
 
-  constructor(prisma?: PrismaClient) {
-    this.prisma = prisma || new PrismaClient();
+  constructor(prisma: PrismaClient = defaultPrisma) {
+    this.prisma = prisma;
   }
 
   async close(): Promise<void> {
@@ -29,7 +38,10 @@ export class PostgresMemoryAdapter implements MemoryPort {
         role: message.role,
         content: message.content,
         sql: message.sql,
-        sqlResult: message.sqlResult,
+        sqlResult:
+          message.sqlResult === undefined
+            ? undefined
+            : toPrismaJson(message.sqlResult),
         bashCommand: message.bashCommand,
         bashOutput: message.bashOutput,
         materialIds: message.materialIds || [],
@@ -62,6 +74,7 @@ export class PostgresMemoryAdapter implements MemoryPort {
   // ============ 用户偏好管理 ============
 
   async savePreference(userId: string, key: string, value: unknown): Promise<void> {
+    const jsonValue = toPrismaJson(value);
     await this.prisma.userPreference.upsert({
       where: {
         userId_key: {
@@ -72,10 +85,10 @@ export class PostgresMemoryAdapter implements MemoryPort {
       create: {
         userId,
         key,
-        value,
+        value: jsonValue,
       },
       update: {
-        value,
+        value: jsonValue,
       },
     });
   }
@@ -152,6 +165,7 @@ export class PostgresMemoryAdapter implements MemoryPort {
   // ============ Schema 缓存管理 ============
 
   async cacheSchema(userId: string, externalDbId: string, schema: unknown): Promise<void> {
+    const schemaJson = toPrismaJson(schema);
     await this.prisma.schemaCache.upsert({
       where: {
         userId_externalDbId: {
@@ -162,10 +176,10 @@ export class PostgresMemoryAdapter implements MemoryPort {
       create: {
         userId,
         externalDbId,
-        schemaJson: schema,
+        schemaJson,
       },
       update: {
-        schemaJson: schema,
+        schemaJson,
         refreshedAt: new Date(),
       },
     });

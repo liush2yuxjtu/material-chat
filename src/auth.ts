@@ -1,19 +1,30 @@
 /**
  * NextAuth.js v5 配置
- * 支持邮箱密码登录和 Google OAuth
+ * 支持邮箱密码登录和可选的 Google OAuth
  */
 
 import NextAuth from 'next-auth';
 import { PrismaAdapter } from '@auth/prisma-adapter';
 import CredentialsProvider from 'next-auth/providers/credentials';
 import GoogleProvider from 'next-auth/providers/google';
-import { PrismaClient } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
+import { prisma } from '@/lib/prisma';
 
-const prisma = new PrismaClient();
+const googleClientId = process.env.AUTH_GOOGLE_ID ?? process.env.GOOGLE_CLIENT_ID;
+const googleClientSecret =
+  process.env.AUTH_GOOGLE_SECRET ?? process.env.GOOGLE_CLIENT_SECRET;
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   adapter: PrismaAdapter(prisma),
+
+  // Auth.js v5 requires an explicit/inferred AUTH_SECRET. Keep the legacy
+  // NEXTAUTH_SECRET fallback so existing CI and deployment environments remain
+  // compatible during the migration.
+  secret: process.env.AUTH_SECRET ?? process.env.NEXTAUTH_SECRET,
+
+  // The application is self-hostable (including `next start` in Playwright and
+  // Docker), so requests must trust the host header supplied by that runtime.
+  trustHost: true,
 
   // Session策略：使用JWT（适合无状态部署）
   session: {
@@ -32,7 +43,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       name: 'Credentials',
       credentials: {
         email: { label: 'Email', type: 'email' },
-        password: { label: 'Password', type: 'password' }
+        password: { label: 'Password', type: 'password' },
       },
       async authorize(credentials) {
         if (!credentials?.email || !credentials?.password) {
@@ -41,7 +52,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
 
         // 查找用户
         const user = await prisma.user.findUnique({
-          where: { email: credentials.email as string }
+          where: { email: credentials.email as string },
         });
 
         if (!user || !user.password) {
@@ -51,7 +62,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         // 验证密码
         const isValid = await bcrypt.compare(
           credentials.password as string,
-          user.password
+          user.password,
         );
 
         if (!isValid) {
@@ -64,14 +75,18 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           name: user.name,
           image: user.image,
         };
-      }
+      },
     }),
 
-    // Google OAuth登录
-    GoogleProvider({
-      clientId: process.env.GOOGLE_CLIENT_ID!,
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
-    }),
+    // Google OAuth 仅在凭据完整时启用，避免 CI/UAT 环境生成无效 provider。
+    ...(googleClientId && googleClientSecret
+      ? [
+          GoogleProvider({
+            clientId: googleClientId,
+            clientSecret: googleClientSecret,
+          }),
+        ]
+      : []),
   ],
 
   callbacks: {

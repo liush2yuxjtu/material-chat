@@ -6,17 +6,22 @@
 import {
   DatabasePort,
   QueryResult,
+  QueryRow,
   SchemaInfo,
   ConnectionConfig,
   TableInfo,
-  ColumnInfo,
 } from '@/shared/ports/DatabasePort';
 
 export class MockDatabaseAdapter implements DatabasePort {
   private connected = false;
   private config: ConnectionConfig | null = null;
 
-  async query(sql: string, params?: any[]): Promise<QueryResult> {
+  async query<Row extends QueryRow = QueryRow>(
+    sql: string,
+    params: unknown[] = [],
+  ): Promise<QueryResult<Row>> {
+    void params;
+
     if (!this.connected) {
       throw new Error('数据库未连接');
     }
@@ -41,7 +46,7 @@ export class MockDatabaseAdapter implements DatabasePort {
     }
 
     result.executionTime = Date.now() - startTime;
-    return result;
+    return result as QueryResult<Row>;
   }
 
   async getSchema(): Promise<SchemaInfo> {

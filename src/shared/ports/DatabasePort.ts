@@ -3,8 +3,10 @@
  * 负责与外部 PostgreSQL 数据库交互，执行 SQL 查询
  */
 
-export interface QueryResult {
-  rows: any[];
+export type QueryRow = Record<string, unknown>;
+
+export interface QueryResult<Row extends QueryRow = QueryRow> {
+  rows: Row[];
   fields: FieldInfo[];
   rowCount: number;
   executionTime: number; // 毫秒
@@ -34,7 +36,10 @@ export interface DatabasePort {
    * @param params 参数化查询参数
    * @returns 查询结果
    */
-  query(sql: string, params?: any[]): Promise<QueryResult>;
+  query<Row extends QueryRow = QueryRow>(
+    sql: string,
+    params?: unknown[],
+  ): Promise<QueryResult<Row>>;
 
   /**
    * 获取数据库 Schema 信息

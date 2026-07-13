@@ -14,7 +14,7 @@ import { PostgresAdapter } from '@/adapters/database/PostgresAdapter';
 import { LocalFileSystemAdapter } from '@/adapters/storage/LocalFileSystemAdapter';
 import { VercelSandboxAdapter } from '@/adapters/sandbox/VercelSandboxAdapter';
 import { PostgresMemoryAdapter } from '@/adapters/postgres/PostgresMemoryAdapter';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '@/lib/prisma';
 
 export interface AppDependencies {
   llm: LLMPort;
@@ -57,7 +57,7 @@ export class CompositionRoot {
     // 初始化沙盒适配器
     const sandbox = this.createSandboxAdapter();
 
-    // 初始化内存适配器（使用 Prisma）
+    // 初始化内存适配器（使用共享 Prisma Client）
     const memory = this.createMemoryAdapter();
 
     this.dependencies = {
@@ -153,8 +153,6 @@ export class CompositionRoot {
   }
 
   private createMemoryAdapter(): MemoryPort {
-    // 使用 Prisma Client 创建 PostgresMemoryAdapter
-    const prisma = new PrismaClient();
     return new PostgresMemoryAdapter(prisma);
   }
 
