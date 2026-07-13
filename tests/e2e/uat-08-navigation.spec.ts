@@ -43,8 +43,8 @@ test.describe('UAT-08 | 页面导航', () => {
 
   test('AC-006: 首页有3个功能卡片', async ({ page }) => {
     await page.goto('/')
-    await expect(page.getByText('AI对话')).toBeVisible()
-    await expect(page.getByText('素材管理')).toBeVisible()
-    await expect(page.getByText('SQL查询')).toBeVisible()
+    await expect(page.getByText('AI对话', { exact: true })).toBeVisible()
+    await expect(page.getByText('素材管理', { exact: true })).toBeVisible()
+    await expect(page.getByText('SQL查询', { exact: true })).toBeVisible()
   })
 })
