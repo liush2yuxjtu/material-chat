@@ -3,20 +3,14 @@
  * 用于开发和测试阶段，返回确定性的流式响应
  */
 
-import {
-  LLMPort,
-  ChatMessage,
-  LLMOptions,
-  DatabaseSchema,
-} from '@/shared/ports/LLMPort';
+import { ChatMessage, LLMPort } from '@/shared/ports/LLMPort';
 
 export class MockKimiAdapter implements LLMPort {
   async *streamChat(
     messages: ChatMessage[],
-    options?: LLMOptions,
   ): AsyncGenerator<string, void, unknown> {
-    const response = await this.chat(messages, options);
-    const chunks = response.match(/.{1,8}/gu) || [response];
+    const response = await this.chat(messages);
+    const chunks = response.match(/[\s\S]{1,8}/gu) || [response];
 
     for (const chunk of chunks) {
       yield chunk;
@@ -24,7 +18,7 @@ export class MockKimiAdapter implements LLMPort {
     }
   }
 
-  async chat(messages: ChatMessage[], _options?: LLMOptions): Promise<string> {
+  async chat(messages: ChatMessage[]): Promise<string> {
     const userMessage = messages.at(-1)?.content || '当前问题';
     return [
       `针对“${userMessage}”，建议按以下三步整理：`,
@@ -34,11 +28,7 @@ export class MockKimiAdapter implements LLMPort {
     ].join('\n');
   }
 
-  async generateSQL(
-    _naturalLanguage: string,
-    _schema: DatabaseSchema,
-    _options?: LLMOptions,
-  ): Promise<string> {
+  async generateSQL(): Promise<string> {
     return 'SELECT 1;';
   }
 
