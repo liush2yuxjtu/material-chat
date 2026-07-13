@@ -24,7 +24,6 @@ concurrency:
   group: uat-${{ github.ref }}
   cancel-in-progress: true
 
-# 需要 contents:write 才能部署 GitHub Pages 和 PR comment
 permissions:
   contents: write
   pull-requests: write
@@ -39,6 +38,10 @@ jobs:
 
     env:
       CI: true
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/material_chat_test
+      AUTH_SECRET: test-secret-key-for-ci-uat-at-least-32-characters
+      NEXTAUTH_SECRET: test-secret-key-for-ci-uat-at-least-32-characters
+      NEXTAUTH_URL: http://127.0.0.1:3000
 
     services:
       postgres:
@@ -72,17 +75,11 @@ jobs:
       - name: 生成 Prisma Client
         run: npx prisma generate
 
-      - name: 运行数据库迁移
-        run: npx prisma migrate deploy
-        env:
-          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/material_chat_test
+      - name: 创建 UAT 数据库结构
+        run: npx prisma db push --skip-generate
 
       - name: 构建应用
         run: npm run build
-        env:
-          NEXTAUTH_SECRET: test-secret-key-for-ci-uat
-          NEXTAUTH_URL: http://localhost:3000
-          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/material_chat_test
 
       - name: 运行 UAT 测试
         id: playwright
@@ -94,24 +91,16 @@ jobs:
           else
             npx playwright test
           fi
-        env:
-          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/material_chat_test
-          NEXTAUTH_SECRET: test-secret-key-for-ci-uat
-          NEXTAUTH_URL: http://localhost:3000
         continue-on-error: true
-
-      # ── 复制截图到报告目录（供 GitHub Pages 引用） ──
 
       - name: 整理截图到报告目录
         if: always()
         run: |
-          mkdir -p playwright-report/screenshots
+          mkdir -p playwright-report/screenshots playwright-report/videos
           find test-results -name "*.png" -exec cp {} playwright-report/screenshots/ \; 2>/dev/null || true
           find test-results -name "*.webm" -exec cp {} playwright-report/videos/ \; 2>/dev/null || true
-          echo "Screenshots: $(ls playwright-report/screenshots/ 2>/dev/null | wc -l)"
-          echo "Videos: $(ls playwright-report/videos/ 2>/dev/null | wc -l)"
-
-      # ── 生成 PR 评论 Markdown（解析 test-results.json） ──
+          echo "Screenshots: $(find playwright-report/screenshots -type f 2>/dev/null | wc -l)"
+          echo "Videos: $(find playwright-report/videos -type f 2>/dev/null | wc -l)"
 
       - name: 生成测试摘要
         id: summary
@@ -122,8 +111,6 @@ jobs:
           GITHUB_RUN_ID: "${{ github.run_id }}"
           GITHUB_REPOSITORY: "${{ github.repository }}"
           GITHUB_SERVER_URL: "${{ github.server_url }}"
-
-      # ── 部署 HTML 报告到 GitHub Pages ──
 
       - name: 部署报告到 GitHub Pages
         if: always()
@@ -137,16 +124,12 @@ jobs:
           user_email: 'github-actions[bot]@users.noreply.github.com'
           commit_message: '📊 UAT report for ${{ github.run_id }}'
 
-      # ── PR 内联评论（sticky，每次更新不刷屏） ──
-
       - name: PR 内联评论
         if: github.event_name == 'pull_request'
         uses: marocchino/sticky-pull-request-comment@v2
         with:
           header: uat-results
           path: uat-comment.md
-
-      # ── 上传 artifacts（兜底下载） ──
 
       - name: 上传 HTML 报告 (artifact)
         if: always()
@@ -162,6 +145,7 @@ jobs:
         with:
           name: screenshots
           path: test-results/**/*.png
+          if-no-files-found: warn
           retention-days: 30
 
       - name: 上传视频
@@ -170,6 +154,7 @@ jobs:
         with:
           name: videos
           path: test-results/**/*.webm
+          if-no-files-found: warn
           retention-days: 14
 
       - name: 上传 Trace
@@ -178,4 +163,9 @@ jobs:
         with:
           name: playwright-traces
           path: test-results/**/trace.zip
+          if-no-files-found: warn
           retention-days: 14
+
+      - name: 测试失败时令工作流失败
+        if: steps.playwright.outcome == 'failure'
+        run: exit 1
