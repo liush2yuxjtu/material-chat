@@ -3,7 +3,11 @@
  * 协调 LLM、数据库和安全校验，实现自然语言到 SQL 查询的完整流程
  */
 
-import { DatabasePort, SchemaInfo } from '@/shared/ports/DatabasePort';
+import {
+  DatabasePort,
+  QueryResult,
+  SchemaInfo,
+} from '@/shared/ports/DatabasePort';
 import { LLMPort, DatabaseSchema } from '@/shared/ports/LLMPort';
 import { SqlSecurityValidator } from '@/shared/security/SqlSecurityValidator';
 
@@ -23,7 +27,7 @@ export interface QueryResponse {
   explanation: string;
   /** 查询结果（如果已执行） */
   result?: {
-    rows: any[];
+    rows: QueryResult['rows'];
     rowCount: number;
     executionTime: number;
   };
@@ -41,7 +45,7 @@ export class TextToSqlUseCase {
   constructor(
     private databasePort: DatabasePort,
     private llmPort: LLMPort,
-    private cacheExpiryMinutes: number = 60
+    private cacheExpiryMinutes: number = 60,
   ) {
     this.securityValidator = new SqlSecurityValidator({
       queryTimeout: 30000,
@@ -63,7 +67,7 @@ export class TextToSqlUseCase {
       const dbSchema = this.convertToDatabaseSchema(schema);
       const sql = await this.llmPort.generateSQL(
         request.query,
-        dbSchema
+        dbSchema,
       );
 
       // 3. SQL 安全校验
@@ -118,6 +122,8 @@ export class TextToSqlUseCase {
    * 执行已生成的 SQL
    */
   async executeSql(sql: string, userId: string): Promise<QueryResponse> {
+    void userId;
+
     try {
       // 安全校验
       this.securityValidator.validateOrThrow(sql);
@@ -157,9 +163,9 @@ export class TextToSqlUseCase {
     const now = new Date();
 
     if (
-      this.schemaCache &&
-      this.schemaCacheExpiry &&
-      now < this.schemaCacheExpiry
+      this.schemaCache
+      && this.schemaCacheExpiry
+      && now < this.schemaCacheExpiry
     ) {
       return this.schemaCache;
     }
@@ -167,7 +173,7 @@ export class TextToSqlUseCase {
     const schema = await this.databasePort.getSchema();
     this.schemaCache = schema;
     this.schemaCacheExpiry = new Date(
-      now.getTime() + this.cacheExpiryMinutes * 60 * 1000
+      now.getTime() + this.cacheExpiryMinutes * 60 * 1000,
     );
 
     return schema;
@@ -180,11 +186,11 @@ export class TextToSqlUseCase {
     return {
       tables: schema.tables.map((table) => ({
         name: table.name,
-        columns: table.columns.map((col) => ({
-          name: col.name,
-          type: col.type,
-          nullable: col.nullable,
-          primaryKey: col.isPrimaryKey,
+        columns: table.columns.map((column) => ({
+          name: column.name,
+          type: column.type,
+          nullable: column.nullable,
+          primaryKey: column.isPrimaryKey,
         })),
         rowCount: table.rowCount,
       })),
@@ -194,7 +200,10 @@ export class TextToSqlUseCase {
   /**
    * 带超时的查询执行
    */
-  private async executeWithTimeout(sql: string, timeoutMs: number) {
+  private async executeWithTimeout(
+    sql: string,
+    timeoutMs: number,
+  ): Promise<QueryResult> {
     return Promise.race([
       this.databasePort.query(sql),
       this.createTimeout(timeoutMs),

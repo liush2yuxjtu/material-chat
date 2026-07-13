@@ -3,7 +3,7 @@
  * 支持分页、标签筛选、类型筛选
  */
 
-import { PrismaClient } from '@prisma/client';
+import { Prisma, PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
@@ -34,6 +34,11 @@ export interface ListMaterialsResponse {
   hasMore: boolean;
 }
 
+interface MaterialLocation {
+  ossKey: string | null;
+  localPath: string | null;
+}
+
 export class ListMaterialsUseCase {
   /**
    * 列出用户的素材
@@ -42,7 +47,7 @@ export class ListMaterialsUseCase {
     const { userId, type, tags, page = 1, pageSize = 20 } = request;
 
     // 构建查询条件
-    const where: any = { userId };
+    const where: Prisma.MaterialWhereInput = { userId };
 
     if (type) {
       where.type = type;
@@ -69,15 +74,15 @@ export class ListMaterialsUseCase {
     });
 
     // 转换为响应格式
-    const materialItems: MaterialItem[] = materials.map((m) => ({
-      id: m.id,
-      name: m.name,
-      type: m.type,
-      url: this.buildMaterialUrl(m),
-      size: m.size,
-      mimeType: m.mimeType,
-      tags: m.tags,
-      createdAt: m.createdAt,
+    const materialItems: MaterialItem[] = materials.map((material) => ({
+      id: material.id,
+      name: material.name,
+      type: material.type,
+      url: this.buildMaterialUrl(material),
+      size: material.size,
+      mimeType: material.mimeType,
+      tags: material.tags,
+      createdAt: material.createdAt,
     }));
 
     return {
@@ -92,7 +97,7 @@ export class ListMaterialsUseCase {
   /**
    * 构建素材访问 URL
    */
-  private buildMaterialUrl(material: any): string {
+  private buildMaterialUrl(material: MaterialLocation): string {
     // 优先使用 OSS URL，否则使用本地路径
     if (material.ossKey) {
       // 在生产环境应该从环境变量读取 OSS 域名

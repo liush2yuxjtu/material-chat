@@ -10,6 +10,32 @@ import {
   DatabaseSchema,
 } from '@/shared/ports/LLMPort';
 
+type KimiMessage = {
+  role: ChatMessage['role'] | 'system';
+  content: string;
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function getTextDelta(value: unknown): string | null {
+  if (!isRecord(value) || value.type !== 'content_block_delta') {
+    return null;
+  }
+
+  const delta = value.delta;
+  if (
+    !isRecord(delta)
+    || delta.type !== 'text_delta'
+    || typeof delta.text !== 'string'
+  ) {
+    return null;
+  }
+
+  return delta.text;
+}
+
 export class KimiAdapter implements LLMPort {
   private apiKey: string;
   private baseUrl: string;
@@ -18,7 +44,7 @@ export class KimiAdapter implements LLMPort {
   constructor(
     apiKey: string,
     baseUrl = 'https://api.kimi.com/coding',
-    model = 'claude-sonnet-4-6'
+    model = 'claude-sonnet-4-6',
   ) {
     if (!apiKey) {
       throw new Error('Kimi API key 不能为空');
@@ -30,7 +56,7 @@ export class KimiAdapter implements LLMPort {
 
   async *streamChat(
     messages: ChatMessage[],
-    options?: LLMOptions
+    options?: LLMOptions,
   ): AsyncGenerator<string, void, unknown> {
     const requestBody = {
       model: this.model,
@@ -54,7 +80,7 @@ export class KimiAdapter implements LLMPort {
       if (!response.ok) {
         const errorText = await response.text();
         throw new Error(
-          `Kimi API 调用失败: ${response.status} - ${errorText}`
+          `Kimi API 调用失败: ${response.status} - ${errorText}`,
         );
       }
 
@@ -75,20 +101,23 @@ export class KimiAdapter implements LLMPort {
         buffer = lines.pop() || '';
 
         for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            const data = line.slice(6).trim();
-            if (data === '[DONE]') {
-              return;
-            }
+          if (!line.startsWith('data: ')) {
+            continue;
+          }
 
-            try {
-              const parsed = JSON.parse(data);
-              if (parsed.type === 'content_block_delta' && parsed.delta?.type === 'text_delta') {
-                yield parsed.delta.text;
-              }
-            } catch (e) {
-              console.error('解析 SSE 数据失败:', e);
+          const data = line.slice(6).trim();
+          if (data === '[DONE]') {
+            return;
+          }
+
+          try {
+            const parsed: unknown = JSON.parse(data);
+            const text = getTextDelta(parsed);
+            if (text !== null) {
+              yield text;
             }
+          } catch (error) {
+            console.error('解析 SSE 数据失败:', error);
           }
         }
       }
@@ -121,11 +150,11 @@ export class KimiAdapter implements LLMPort {
       if (!response.ok) {
         const errorText = await response.text();
         throw new Error(
-          `Kimi API 调用失败: ${response.status} - ${errorText}`
+          `Kimi API 调用失败: ${response.status} - ${errorText}`,
         );
       }
 
-      const data = await response.json();
+      const data: unknown = await response.json();
       return this.extractTextFromResponse(data);
     } catch (error) {
       console.error('Kimi 非流式调用错误:', error);
@@ -136,7 +165,7 @@ export class KimiAdapter implements LLMPort {
   async generateSQL(
     naturalLanguage: string,
     schema: DatabaseSchema,
-    options?: LLMOptions
+    options?: LLMOptions,
   ): Promise<string> {
     const systemPrompt = this.buildSQLSystemPrompt(schema);
     const messages: ChatMessage[] = [
@@ -149,14 +178,17 @@ export class KimiAdapter implements LLMPort {
     const response = await this.chat(messages, {
       ...options,
       systemPrompt,
-      temperature: 0.3, // 降低温度以获得更确定的输出
+      temperature: 0.3,
     });
 
     return this.extractSQLFromResponse(response);
   }
 
-  private buildMessages(messages: ChatMessage[], systemPrompt?: string): any[] {
-    const result: any[] = [];
+  private buildMessages(
+    messages: ChatMessage[],
+    systemPrompt?: string,
+  ): KimiMessage[] {
+    const result: KimiMessage[] = [];
 
     if (systemPrompt) {
       result.push({
@@ -165,10 +197,10 @@ export class KimiAdapter implements LLMPort {
       });
     }
 
-    for (const msg of messages) {
+    for (const message of messages) {
       result.push({
-        role: msg.role,
-        content: msg.content,
+        role: message.role,
+        content: message.content,
       });
     }
 
@@ -201,14 +233,23 @@ export class KimiAdapter implements LLMPort {
     return prompt;
   }
 
-  private extractTextFromResponse(data: any): string {
-    if (data.content && Array.isArray(data.content)) {
-      const textBlocks = data.content.filter(
-        (block: any) => block.type === 'text'
-      );
-      return textBlocks.map((block: any) => block.text).join('');
+  private extractTextFromResponse(data: unknown): string {
+    if (!isRecord(data) || !Array.isArray(data.content)) {
+      return '';
     }
-    return '';
+
+    return data.content
+      .flatMap((block) => {
+        if (
+          isRecord(block)
+          && block.type === 'text'
+          && typeof block.text === 'string'
+        ) {
+          return [block.text];
+        }
+        return [];
+      })
+      .join('');
   }
 
   private extractSQLFromResponse(response: string): string {

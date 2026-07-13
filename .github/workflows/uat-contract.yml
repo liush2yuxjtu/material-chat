@@ -47,8 +47,12 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - name: Generate Prisma client
+        run: npx prisma generate
       - run: npm run lint
       - run: npm run build
+        env:
+          NEXT_TELEMETRY_DISABLED: '1'
       - name: Verify ten numbered Playwright UAT specs are represented
         shell: bash
         run: |

@@ -40,23 +40,23 @@ These ten cases define acceptance for named users completing specific chat and m
 ## UAT-06 — Ethan Lim uploads a PDF learning material
 **Person:** Ethan Lim, teaching assistant.
 **Task:** Add a PDF to the material library.
-**Preconditions:** Ethan is authenticated; valid PDF is available.
-**Steps:** Open materials; upload the PDF; wait for completion; refresh.
+**Preconditions:** Ethan is authenticated; a valid PDF is available.
+**Steps:** Open materials; select `document` as the material type; choose the PDF; upload it; wait for completion; refresh.
 **Acceptance criteria:** File is accepted once; title/type/status are visible; record persists after refresh; unsupported files are rejected without partial records.
 
-## UAT-07 — Mei Chen filters materials by keyword
+## UAT-07 — Mei Chen filters materials by tag
 **Person:** Mei Chen, postgraduate learner.
-**Task:** Find one economics document among several materials.
-**Preconditions:** Library contains materials with distinct titles.
-**Steps:** Enter `economics` in the filter; inspect results; clear the filter.
-**Acceptance criteria:** Only matching materials remain while filtered; matching is stable and case-tolerant as designed; clearing restores the complete list.
+**Task:** Find one economics document among materials with distinct tags.
+**Preconditions:** The library contains several materials, and only the target document has the `economics` tag.
+**Steps:** Enter `economics` in the tag filter; inspect results; clear the tag filter.
+**Acceptance criteria:** Only materials carrying the matching tag remain while filtered; clearing the filter restores the complete list.
 
-## UAT-08 — Oliver Brown navigates without losing chat state
+## UAT-08 — Oliver Brown navigates between protected workspaces
 **Person:** Oliver Brown, active learner.
-**Task:** Move between chat and materials and return to the current conversation.
-**Preconditions:** Oliver has an active conversation and at least one material.
-**Steps:** Open materials; return to chat using application navigation.
-**Acceptance criteria:** Navigation links work; authenticated shell remains stable; current conversation is preserved or restored according to product design; no full error page appears.
+**Task:** Move from chat to materials and return to a usable chat workspace.
+**Preconditions:** Oliver is authenticated and can access both protected routes.
+**Steps:** Open the chat page; navigate to materials; return to chat using application navigation.
+**Acceptance criteria:** Navigation links work; the authenticated session remains valid; both pages render without a full error page; the returned chat workspace accepts a new message. Conversation restoration is not required by the current client-only chat design.
 
 ## UAT-09 — Hana Suzuki cannot register a duplicate email
 **Person:** Hana Suzuki, existing learner.
@@ -69,5 +69,5 @@ These ten cases define acceptance for named users completing specific chat and m
 **Person:** Ahmed Khan, course administrator.
 **Task:** Retry a material upload after the first request fails.
 **Preconditions:** First upload request is forced to fail; second request succeeds.
-**Steps:** Upload a PDF; observe failure; retry the same file; refresh the library.
+**Steps:** Select `document` as the material type; upload a PDF; observe failure; retry the same file; refresh the library.
 **Acceptance criteria:** Failure is visible and actionable; retry creates exactly one material record; no duplicate or stuck loading item remains; successful material persists after refresh.

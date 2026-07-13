@@ -33,12 +33,14 @@ export interface QueryField {
   dataType?: string;
 }
 
+export type QueryRow = Record<string, unknown>;
+
 /**
  * 查询结果
  */
-export interface QueryResult {
+export interface QueryResult<Row extends QueryRow = QueryRow> {
   /** 结果行数据 */
-  rows: any[];
+  rows: Row[];
   /** 影响的行数 */
   rowCount: number;
   /** 字段定义 */
@@ -59,7 +61,10 @@ export interface DatabasePort {
   /**
    * 执行 SQL 查询
    */
-  query(sql: string, params?: any[]): Promise<QueryResult>;
+  query<Row extends QueryRow = QueryRow>(
+    sql: string,
+    params?: unknown[],
+  ): Promise<QueryResult<Row>>;
 
   /**
    * 获取数据库 Schema
