@@ -77,11 +77,17 @@ export default function MaterialsPage() {
     }
   }, [status, router]);
 
-  // 加载素材列表
+  // 加载素材列表；延后到当前 effect 提交后执行，避免同步级联渲染。
   useEffect(() => {
-    if (status === 'authenticated') {
-      void loadMaterials();
+    if (status !== 'authenticated') {
+      return;
     }
+
+    const timeoutId = window.setTimeout(() => {
+      void loadMaterials();
+    }, 0);
+
+    return () => window.clearTimeout(timeoutId);
   }, [loadMaterials, status]);
 
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
