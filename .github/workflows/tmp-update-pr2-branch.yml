@@ -1,5 +1,6 @@
 name: Temporary update PR 2 branch
 
+# One-time helper. The job deletes this file from main after synchronizing PR #2.
 on:
   push:
     branches: [main]
