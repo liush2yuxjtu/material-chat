@@ -1,11 +1,11 @@
 /**
  * UAT-08: 页面导航
  *
- * 业务场景：用户在平台各页面间导航 → 验证链接/按钮跳转正确
- * 涉及角色：所有用户
+ * 业务场景：用户在平台各页面间导航 → 验证公开链接与受保护工作台跳转
+ * 涉及角色：访客与已登录学员
  * 验收人：产品经理 + QA
  */
-import { test, expect } from '@playwright/test'
+import { expect, test } from '@playwright/test'
 
 test.describe('UAT-08 | 页面导航', () => {
   test('AC-001: 首页 → 登录页', async ({ page }) => {
@@ -46,5 +46,37 @@ test.describe('UAT-08 | 页面导航', () => {
     await expect(page.getByText('AI对话', { exact: true })).toBeVisible()
     await expect(page.getByText('素材管理', { exact: true })).toBeVisible()
     await expect(page.getByText('SQL查询', { exact: true })).toBeVisible()
+  })
+
+  test('AC-007: 登录用户可在聊天与素材工作台往返并继续聊天', async ({
+    page,
+    request,
+  }) => {
+    const email = `oliver-${Date.now()}-${Math.random().toString(36).slice(2)}@example.com`
+    const password = 'navigation-test-123456'
+    const registration = await request.post('/api/v1/auth/register', {
+      data: { email, password, name: 'Oliver Brown' },
+    })
+    expect(registration.status()).toBe(201)
+
+    await page.goto('/login')
+    await page.getByLabel('邮箱').fill(email)
+    await page.getByLabel('密码').fill(password)
+    await page.getByRole('button', { name: '登录', exact: true }).click()
+    await expect(page).toHaveURL(/\/chat$/)
+    await expect(page.getByPlaceholder('输入消息...')).toBeVisible()
+
+    await page.getByRole('button', { name: '素材管理', exact: true }).click()
+    await expect(page).toHaveURL(/\/materials$/)
+    await expect(page.getByRole('heading', { name: '素材管理' })).toBeVisible()
+
+    await page.getByRole('button', { name: '返回聊天', exact: true }).click()
+    await expect(page).toHaveURL(/\/chat$/)
+
+    const question = '返回聊天后还能继续提问吗？'
+    await page.getByPlaceholder('输入消息...').fill(question)
+    await page.getByRole('button', { name: '发送', exact: true }).click()
+    await expect(page.getByText(question, { exact: true })).toBeVisible()
+    await expect(page.getByText(/按课程主题建立清晰目录/)).toBeVisible()
   })
 })
